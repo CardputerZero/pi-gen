@@ -22,8 +22,8 @@ download_and_install_deb() {
     fi
 
     if [ -z "$deb_url" ]; then
-        echo "ERROR: Could not find ${app_name} m5stack1 arm64 deb URL"
-        exit 1
+        echo "WARNING: No release found for ${app_name} (m5stack1 arm64) — skipping"
+        return 0
     fi
 
     local deb_file="${deb_url##*/}"
@@ -38,7 +38,7 @@ CHROOT
 }
 
 RECORDER_RELEASES_URL="${RECORDER_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Recorder/releases}"
-COMPASS_RELEASE_TAG="${COMPASS_RELEASE_TAG:-v0.1.0}"
+COMPASS_RELEASES_URL="${COMPASS_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Compass/releases}"
 CAMERA_APP_RELEASES_URL="${CAMERA_APP_RELEASES_URL:-https://api.github.com/repos/CardputerZero/CameraApp/releases}"
 FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/repos/CardputerZero/FactoryTest/releases}"
 
@@ -50,7 +50,7 @@ download_and_install_deb \
 
 download_and_install_deb \
     "Compass" \
-    "https://api.github.com/repos/CardputerZero/Compass/releases/tags/${COMPASS_RELEASE_TAG}" \
+    "$COMPASS_RELEASES_URL" \
     "COMPASS_DEB_URL" \
     'm5cardputerzero-compass_[^"/]*_m5stack1_arm64\.deb'
 
