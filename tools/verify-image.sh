@@ -92,10 +92,28 @@ else
 fi
 
 # Check cmdline.txt
-if grep -q "quiet splash" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
-    pass "cmdline.txt: quiet splash"
+if grep -q "\bquiet\b" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    pass "cmdline.txt: quiet present"
 else
-    fail "cmdline.txt: missing quiet splash"
+    fail "cmdline.txt: quiet missing"
+fi
+
+if grep -q "\bsplash\b" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    fail "cmdline.txt: splash should be removed for CardputerZero"
+else
+    pass "cmdline.txt: splash removed"
+fi
+
+if grep -q "plymouth.ignore-serial-consoles" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    fail "cmdline.txt: plymouth.ignore-serial-consoles should be removed for CardputerZero"
+else
+    pass "cmdline.txt: plymouth.ignore-serial-consoles removed"
+fi
+
+if grep -q "console=serial0,115200" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    fail "cmdline.txt: console=serial0,115200 should be removed for CardputerZero"
+else
+    pass "cmdline.txt: console=serial0,115200 removed"
 fi
 
 umount "$TMPDIR/boot" 2>/dev/null || true
