@@ -92,13 +92,37 @@ else
 fi
 
 # Check cmdline.txt
-if grep -q "\bquiet\b" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+if awk '
+{
+    for (i = 1; i <= NF; i++) {
+        if ($i == "quiet") {
+            ok = 1
+            break
+        }
+    }
+}
+END {
+    exit (ok ? 0 : 1)
+}
+' "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
     pass "cmdline.txt: quiet present"
 else
     fail "cmdline.txt: quiet missing"
 fi
 
-if grep -q "\bsplash\b" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+if awk '
+{
+    for (i = 1; i <= NF; i++) {
+        if ($i == "splash") {
+            ok = 1
+            break
+        }
+    }
+}
+END {
+    exit (ok ? 0 : 1)
+}
+' "$TMPDIR/boot/cmdline.txt" >/dev/null 2>&1; then
     fail "cmdline.txt: splash should be removed for CardputerZero"
 else
     pass "cmdline.txt: splash removed"
