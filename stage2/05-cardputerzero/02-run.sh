@@ -111,6 +111,15 @@ sed -i '1i kernel=u-boot.bin' ${ROOTFS_DIR}/boot/firmware/config.txt
 sed -i 's/$/ quiet splash plymouth.ignore-serial-consoles fbcon=map:off cfg80211.ieee80211_regdom=AE/' \
     "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 
+# Remove serial console from CardputerZero images only.
+sed -i -E \
+    -e 's/(^|[[:space:]])console=serial0,115200([[:space:]]|$)/ /g' \
+    -e 's/(^|[[:space:]])splash([[:space:]]|$)/ /g' \
+    -e 's/(^|[[:space:]])plymouth\.ignore-serial-consoles([[:space:]]|$)/ /g' \
+    -e 's/[[:space:]]+/ /g' \
+    -e 's/^ //; s/ $//' \
+    "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
+
 # Module load config
 cat > "${ROOTFS_DIR}/etc/modules-load.d/cardputerzero.conf" << 'EOF'
 i2c-dev
