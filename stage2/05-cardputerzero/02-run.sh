@@ -107,18 +107,26 @@ sed -i '1i kernel=u-boot.bin' ${ROOTFS_DIR}/boot/firmware/config.txt
 
 
 
-# Append cmdline.txt parameters
-sed -i 's/$/ quiet splash plymouth.ignore-serial-consoles fbcon=map:off cfg80211.ieee80211_regdom=AE/' \
+# Append custom cmdline parameters for CardputerZero.
+sed -i 's/$/ quiet fbcon=map:off cfg80211.ieee80211_regdom=AE/' \
     "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 
-# Remove serial console from CardputerZero images only.
-sed -i -E \
-    -e 's/(^|[[:space:]])console=serial0,115200([[:space:]]|$)/ /g' \
-    -e 's/(^|[[:space:]])splash([[:space:]]|$)/ /g' \
-    -e 's/(^|[[:space:]])plymouth\.ignore-serial-consoles([[:space:]]|$)/ /g' \
-    -e 's/[[:space:]]+/ /g' \
-    -e 's/^ //; s/ $//' \
-    "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
+# Clean up CardputerZero cmdline tokens.
+for cmd in "${ROOTFS_DIR}/boot/firmware/cmdline.txt" "${ROOTFS_DIR}/boot/cmdline.txt"; do
+    [ -f "$cmd" ] || continue
+    awk '
+        {
+            out = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i != "console=serial0,115200" && $i != "splash" && $i != "plymouth.ignore-serial-consoles") {
+                    out = out (out == "" ? "" : " ") $i
+                }
+            }
+            print out
+        }
+    ' "$cmd" > "${cmd}.tmp"
+    mv "${cmd}.tmp" "$cmd"
+done
 
 # Module load config
 cat > "${ROOTFS_DIR}/etc/modules-load.d/cardputerzero.conf" << 'EOF'
