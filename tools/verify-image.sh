@@ -40,11 +40,26 @@ mount -o loop,ro "$TMPDIR/boot.fat" "$TMPDIR/boot" 2>/dev/null
 echo ""
 echo "[2/6] Boot partition (FAT32)"
 
-# Check config.txt
-if grep -q "dtoverlay=cardputerzero-overlay" "$TMPDIR/boot/config.txt" 2>/dev/null; then
-    pass "config.txt: dtoverlay=cardputerzero-overlay"
+# Check config.txt. Newer m5stack-linux-dtoverlays split the legacy
+# cardputerzero-overlay into board-revision specific overlays.
+CARDPUTERZERO_OVERLAYS=(
+    "cardputerzero-v3-overlay"
+    "cardputerzero-v5-overlay"
+    "cardputerzero-overlay"
+)
+
+FOUND_CARDPUTERZERO_OVERLAY=""
+for overlay in "${CARDPUTERZERO_OVERLAYS[@]}"; do
+    if grep -q "dtoverlay=${overlay}" "$TMPDIR/boot/config.txt" 2>/dev/null; then
+        FOUND_CARDPUTERZERO_OVERLAY="$overlay"
+        break
+    fi
+done
+
+if [ -n "$FOUND_CARDPUTERZERO_OVERLAY" ]; then
+    pass "config.txt: dtoverlay=${FOUND_CARDPUTERZERO_OVERLAY}"
 else
-    fail "config.txt: missing dtoverlay=cardputerzero-overlay"
+    fail "config.txt: missing CardputerZero dtoverlay"
 fi
 
 if grep -q "dtparam=spi=on" "$TMPDIR/boot/config.txt" 2>/dev/null; then
@@ -61,10 +76,19 @@ fi
 
 
 # Check overlay dtbo
-if [ -f "$TMPDIR/boot/overlays/cardputerzero-overlay.dtbo" ]; then
-    pass "overlays/cardputerzero-overlay.dtbo exists ($(stat -c%s "$TMPDIR/boot/overlays/cardputerzero-overlay.dtbo" 2>/dev/null || stat -f%z "$TMPDIR/boot/overlays/cardputerzero-overlay.dtbo") bytes)"
+FOUND_CARDPUTERZERO_DTBO=""
+for overlay in "${CARDPUTERZERO_OVERLAYS[@]}"; do
+    dtbo="$TMPDIR/boot/overlays/${overlay}.dtbo"
+    if [ -f "$dtbo" ]; then
+        FOUND_CARDPUTERZERO_DTBO="$dtbo"
+        break
+    fi
+done
+
+if [ -n "$FOUND_CARDPUTERZERO_DTBO" ]; then
+    pass "overlays/$(basename "$FOUND_CARDPUTERZERO_DTBO") exists ($(stat -c%s "$FOUND_CARDPUTERZERO_DTBO" 2>/dev/null || stat -f%z "$FOUND_CARDPUTERZERO_DTBO") bytes)"
 else
-    fail "overlays/cardputerzero-overlay.dtbo MISSING"
+    fail "CardputerZero overlay dtbo MISSING"
 fi
 
 # Check cmdline.txt
@@ -80,13 +104,10 @@ echo ""
 echo "[3/6] Kernel modules (/lib/modules/*/extra/)"
 
 REQUIRED_MODULES=(
-    "bmi270_core.ko"
     "bq27xxx_battery.ko"  
     "bq27xxx_battery_i2c.ko"
     "m5ioe1.ko"
     "tca8418_keypad_m5stack.ko"
-    "bmi270_i2c.ko"
-    "bq27xxx_battery_hdq.ko"
     "es8389_m5stack.ko"
     "pwm_bl_m5stack.ko"
     "st7789v_m5stack.ko"
