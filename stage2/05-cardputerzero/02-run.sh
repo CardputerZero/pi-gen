@@ -134,11 +134,8 @@ i2c-dev
 EOF
 
 # Disable systemd-backlight auto-start for backlight devices.
-install -d "${ROOTFS_DIR}/etc/udev/rules.d"
-cat > "${ROOTFS_DIR}/etc/udev/rules.d/99-systemd-no-backlight.rules" << 'EOF'
-# Disable systemd-backlight auto-start for display backlights
-SUBSYSTEM=="backlight", ENV{SYSTEMD_WANTS}=""
-EOF
+install -d "${ROOTFS_DIR}/etc/systemd/system"
+ln -sf /dev/null "${ROOTFS_DIR}/etc/systemd/system/systemd-backlight@backlight:backlight.service"
 
 # Modprobe configs
 cat > "${ROOTFS_DIR}/etc/modprobe.d/blacklist-8192cu.conf" << 'EOF'
