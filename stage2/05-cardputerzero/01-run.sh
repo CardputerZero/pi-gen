@@ -20,8 +20,8 @@ export EXTRADIR="/lib/modules/${KVER}/extra"
 
 # make and install st7789v overlay + module
 cd /tmp/dtoverlays/modules/CardputerZero
-make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" install
-make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" config_setup
+make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" CONFIG_CARDPUTERO_V0_5=y install
+make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" CONFIG_CARDPUTERO_V0_5=y config_setup
 
 # Update module dependencies
 depmod -a "${KVER}"
