@@ -147,6 +147,7 @@ jobs:
           - Launcher (APPLaunch): ${{ steps.components.outputs.launcher_version }} (release: ${{ steps.components.outputs.launcher_release }})
           - Kernel: ${{ steps.components.outputs.kernel_version }}
           - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
+          - CONFIG_CARDPUTERO_V0_5: y (enabled)
           - U-Boot: CardputerZero/u-boot @ ${{ steps.components.outputs.uboot_release }}" \
             "${{ steps.image.outputs.path }}"
         env:
@@ -161,6 +162,7 @@ jobs:
             "launcher_release": "${{ steps.components.outputs.launcher_release }}",
             "kernel_version": "${{ steps.components.outputs.kernel_version }}",
             "driver_commit": "${{ steps.components.outputs.driver_commit }}",
+            "config_cardputero_v0_5": true,
             "uboot_release": "${{ steps.components.outputs.uboot_release }}"
           }
           EOF
@@ -186,6 +188,7 @@ jobs:
           - Launcher (APPLaunch): ${{ steps.components.outputs.launcher_version }} (release: ${{ steps.components.outputs.launcher_release }})
           - Kernel: ${{ steps.components.outputs.kernel_version }}
           - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
+          - CONFIG_CARDPUTERO_V0_5: y (enabled)
           - U-Boot: CardputerZero/u-boot @ ${{ steps.components.outputs.uboot_release }}
 
           **OSS Download:** [${OSS_URL}](${OSS_URL})"
