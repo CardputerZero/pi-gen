@@ -98,6 +98,8 @@ RECORDER_RELEASES_URL="${RECORDER_RELEASES_URL:-https://api.github.com/repos/Car
 COMPASS_RELEASES_URL="${COMPASS_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Compass/releases}"
 CAMERA_APP_RELEASES_URL="${CAMERA_APP_RELEASES_URL:-https://api.github.com/repos/CardputerZero/CameraApp/releases}"
 FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/repos/CardputerZero/FactoryTest/releases}"
+FILES_RELEASES_URL="${FILES_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Files/releases}"
+IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
 
 download_and_install_deb \
     "Recorder" \
@@ -123,3 +125,15 @@ download_and_install_deb \
     "$FACTORY_TEST_RELEASES_URL" \
     "FACTORY_TEST_DEB_URL" \
     '[^"/]*[Ff]actory[Tt]est[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Files" \
+    "$FILES_RELEASES_URL" \
+    "FILES_DEB_URL" \
+    'm5cardputerzero-files_[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "IR-Remote" \
+    "$IR_REMOTE_RELEASES_URL" \
+    "IR_REMOTE_DEB_URL" \
+    'm5cardputerzero-ir-remote_[^"/]*_m5stack1_arm64\.deb'
