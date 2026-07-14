@@ -1,25 +1,64 @@
 #!/bin/bash -e
 
-# Download APPLaunch deb outside chroot (can use GitHub token to avoid rate limits)
+# Download the newest versioned APPLaunch deb outside chroot.
 AUTH_ARGS=()
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-    AUTH_ARGS=(-H "Authorization: token ${GITHUB_TOKEN}")
+GITHUB_AUTH_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -n "$GITHUB_AUTH_TOKEN" ]; then
+    AUTH_ARGS=(-H "Authorization: Bearer ${GITHUB_AUTH_TOKEN}")
 fi
 
-DEB_URL=$(curl -fsSL "${AUTH_ARGS[@]}" \
-    https://api.github.com/repos/CardputerZero/launcher/releases \
-    | grep -o 'https://github.com/[^"]*applaunch[^"]*_arm64\.deb' | head -1)
+LAUNCHER_RELEASES_URL="${LAUNCHER_RELEASES_URL:-https://api.github.com/repos/CardputerZero/launcher/releases}"
+DEB_URL="${APPLAUNCH_DEB_URL:-}"
+DEB_FILE=""
+
+if [ -z "$DEB_URL" ]; then
+    RELEASES_RESPONSE=$(mktemp)
+    trap 'rm -f "$RELEASES_RESPONSE"' EXIT
+
+    echo "Querying APPLaunch releases API: $LAUNCHER_RELEASES_URL"
+    curl -fsSL "${AUTH_ARGS[@]}" -o "$RELEASES_RESPONSE" "$LAUNCHER_RELEASES_URL"
+
+    ASSET_INFO=$(python3 - "$RELEASES_RESPONSE" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    releases = json.load(f)
+
+if not isinstance(releases, list):
+    releases = [releases]
+
+pattern = re.compile(r"^applaunch_[^/]+_m5stack1_arm64\.deb$", re.IGNORECASE)
+for release in releases:
+    for asset in release.get("assets", []):
+        name = asset.get("name", "")
+        if pattern.fullmatch(name):
+            print(f"{name}\t{asset['url']}")
+            raise SystemExit(0)
+PY
+)
+
+    if [ -n "$ASSET_INFO" ]; then
+        DEB_FILE="${ASSET_INFO%%$'\t'*}"
+        DEB_URL="${ASSET_INFO#*$'\t'}"
+    fi
+fi
 
 UBOOT_URL="${UBOOT_FIRMWARE_URL:-https://github.com/CardputerZero/u-boot/releases/latest/download/uboot-firmware-m5stack.tar.gz}"
 
 
 if [ -z "$DEB_URL" ]; then
-    echo "ERROR: Could not find APPLaunch deb URL"
+    echo "ERROR: Could not find an APPLaunch m5stack1 arm64 deb"
     exit 1
 fi
 
+DEB_FILE="${DEB_FILE:-${DEB_URL##*/}}"
 echo "Downloading APPLaunch from: $DEB_URL"
-curl -fsSL -o "${ROOTFS_DIR}/tmp/applaunch.deb" -L "$DEB_URL"
+curl -fsSL "${AUTH_ARGS[@]}" \
+    -H "Accept: application/octet-stream" \
+    -o "${ROOTFS_DIR}/tmp/${DEB_FILE}" \
+    -L "$DEB_URL"
 
 echo "Downloading U-Boot firmware from: $UBOOT_URL"
 curl -fsSL -o "${ROOTFS_DIR}/tmp/uboot-firmware.tar.gz" -L "$UBOOT_URL"
@@ -27,10 +66,10 @@ tar -xzf "${ROOTFS_DIR}/tmp/uboot-firmware.tar.gz" -C "${ROOTFS_DIR}/boot/firmwa
 
 # Install APPLaunch normally so dpkg registers the package. Then adjust startup
 # state directly in the rootfs; LaunchWizard controls first-boot APPLaunch start.
-on_chroot << 'CHROOT'
+on_chroot << CHROOT
 set -e
-dpkg -i /tmp/applaunch.deb
-rm -f /tmp/applaunch.deb
+dpkg -i "/tmp/${DEB_FILE}"
+rm -f "/tmp/${DEB_FILE}"
 CHROOT
 
 if [ ! -x "${ROOTFS_DIR}/usr/share/APPLaunch/bin/LaunchWizard" ]; then
