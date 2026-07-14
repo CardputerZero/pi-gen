@@ -29,7 +29,7 @@ with open(sys.argv[1], "r", encoding="utf-8") as f:
 if not isinstance(releases, list):
     releases = [releases]
 
-pattern = re.compile(r"^applaunch_[^/]+_m5stack1_arm64\.deb$", re.IGNORECASE)
+pattern = re.compile(r"^applaunch_[^/]+[-_]m5stack1_arm64\.deb$", re.IGNORECASE)
 for release in releases:
     for asset in release.get("assets", []):
         name = asset.get("name", "")
