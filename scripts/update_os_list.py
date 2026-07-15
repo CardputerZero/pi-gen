@@ -45,7 +45,6 @@ def main():
     p.add_argument("--launcher-release", default="")
     p.add_argument("--kernel-version", default="")
     p.add_argument("--driver-commit", default="")
-    p.add_argument("--uboot-release", default="")
     p.add_argument("--pigen-commit", default="")
     args = p.parse_args()
 
@@ -88,8 +87,6 @@ def main():
         components["kernel"] = args.kernel_version
     if args.driver_commit:
         components["driver_overlay"] = {"repo": "m5stack/m5stack-linux-dtoverlays", "commit": args.driver_commit}
-    if args.uboot_release:
-        components["uboot"] = {"repo": "CardputerZero/u-boot", "release": args.uboot_release}
     if args.pigen_commit:
         components["pigen"] = {"repo": "CardputerZero/pi-gen", "commit": args.pigen_commit}
     if components:

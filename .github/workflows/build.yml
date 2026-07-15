@@ -121,17 +121,11 @@ jobs:
           DRIVER_COMMIT=$(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${DRIVER_REPO}/commits/master" | jq -r '.sha[:7]' || echo "unknown")
 
-          # U-Boot
-          UBOOT_RELEASE=$(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/CardputerZero/u-boot/releases/latest" | jq -r '.tag_name' || echo "unknown")
-
           echo "launcher_version=$LAUNCHER_TAG" >> "$GITHUB_OUTPUT"
           echo "launcher_release=$LAUNCHER_RELEASE" >> "$GITHUB_OUTPUT"
           echo "kernel_version=$KERNEL_VER" >> "$GITHUB_OUTPUT"
           echo "driver_commit=$DRIVER_COMMIT" >> "$GITHUB_OUTPUT"
-          echo "uboot_release=$UBOOT_RELEASE" >> "$GITHUB_OUTPUT"
-
-          echo "Components: launcher=$LAUNCHER_TAG ($LAUNCHER_RELEASE) kernel=$KERNEL_VER driver=$DRIVER_COMMIT uboot=$UBOOT_RELEASE"
+          echo "Components: launcher=$LAUNCHER_TAG ($LAUNCHER_RELEASE) kernel=$KERNEL_VER driver=$DRIVER_COMMIT"
 
       - name: Create prerelease
         id: release
@@ -147,8 +141,7 @@ jobs:
           - Launcher (APPLaunch): ${{ steps.components.outputs.launcher_version }} (release: ${{ steps.components.outputs.launcher_release }})
           - Kernel: ${{ steps.components.outputs.kernel_version }}
           - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
-          - CONFIG_CARDPUTERO_V0_5: y (enabled)
-          - U-Boot: CardputerZero/u-boot @ ${{ steps.components.outputs.uboot_release }}" \
+          - CONFIG_CARDPUTERO_V0_5: y (enabled)" \
             "${{ steps.image.outputs.path }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -162,8 +155,7 @@ jobs:
             "launcher_release": "${{ steps.components.outputs.launcher_release }}",
             "kernel_version": "${{ steps.components.outputs.kernel_version }}",
             "driver_commit": "${{ steps.components.outputs.driver_commit }}",
-            "config_cardputero_v0_5": true,
-            "uboot_release": "${{ steps.components.outputs.uboot_release }}"
+            "config_cardputero_v0_5": true
           }
           EOF
           gh release upload "${{ steps.release.outputs.tag }}" /tmp/build-info.json --clobber
@@ -189,7 +181,6 @@ jobs:
           - Kernel: ${{ steps.components.outputs.kernel_version }}
           - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
           - CONFIG_CARDPUTERO_V0_5: y (enabled)
-          - U-Boot: CardputerZero/u-boot @ ${{ steps.components.outputs.uboot_release }}
 
           **OSS Download:** [${OSS_URL}](${OSS_URL})"
           gh release edit "${{ steps.release.outputs.tag }}" --notes "$NOTES"

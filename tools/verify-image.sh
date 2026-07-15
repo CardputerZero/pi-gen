@@ -40,6 +40,27 @@ mount -o loop,ro "$TMPDIR/boot.fat" "$TMPDIR/boot" 2>/dev/null
 echo ""
 echo "[2/6] Boot partition (FAT32)"
 
+for firmware_file in start.elf splash.bmp; do
+    if [ -s "$TMPDIR/boot/$firmware_file" ]; then
+        pass "$firmware_file exists ($(stat -c%s "$TMPDIR/boot/$firmware_file" 2>/dev/null || stat -f%z "$TMPDIR/boot/$firmware_file") bytes)"
+    else
+        fail "$firmware_file MISSING or empty"
+    fi
+done
+
+if grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin([[:space:]]*(#.*)?)?$' \
+    "$TMPDIR/boot/config.txt" 2>/dev/null; then
+    fail "config.txt: U-Boot kernel override should be removed"
+else
+    pass "config.txt: no U-Boot kernel override"
+fi
+
+if [ -e "$TMPDIR/boot/u-boot.bin" ]; then
+    fail "u-boot.bin should be removed from boot partition"
+else
+    pass "u-boot.bin absent"
+fi
+
 # Check config.txt. Newer m5stack-linux-dtoverlays split the legacy
 # cardputerzero-overlay into board-revision specific overlays.
 CARDPUTERZERO_OVERLAYS=(

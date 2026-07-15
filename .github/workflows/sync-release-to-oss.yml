@@ -123,7 +123,6 @@ jobs:
           echo "launcher_release=$(jq -r '.launcher_release // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "kernel_version=$(jq -r '.kernel_version // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "driver_commit=$(jq -r '.driver_commit // ""' build-info.json)" >> "$GITHUB_OUTPUT"
-          echo "uboot_release=$(jq -r '.uboot_release // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "pigen_commit=$(jq -r '.pigen_commit // ""' build-info.json)" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,7 +146,6 @@ jobs:
             --launcher-release "${{ steps.buildinfo.outputs.launcher_release }}" \
             --kernel-version "${{ steps.buildinfo.outputs.kernel_version }}" \
             --driver-commit "${{ steps.buildinfo.outputs.driver_commit }}" \
-            --uboot-release "${{ steps.buildinfo.outputs.uboot_release }}" \
             --pigen-commit "${{ steps.buildinfo.outputs.pigen_commit }}"
 
           echo "=== Updated os-list.json ==="

@@ -44,10 +44,6 @@ PY
         DEB_URL="${ASSET_INFO#*$'\t'}"
     fi
 fi
-
-UBOOT_URL="${UBOOT_FIRMWARE_URL:-https://github.com/CardputerZero/u-boot/releases/latest/download/uboot-firmware-m5stack.tar.gz}"
-
-
 if [ -z "$DEB_URL" ]; then
     echo "ERROR: Could not find an APPLaunch m5stack1 arm64 deb"
     exit 1
@@ -60,9 +56,8 @@ curl -fsSL "${AUTH_ARGS[@]}" \
     -o "${ROOTFS_DIR}/tmp/${DEB_FILE}" \
     -L "$DEB_URL"
 
-echo "Downloading U-Boot firmware from: $UBOOT_URL"
-curl -fsSL -o "${ROOTFS_DIR}/tmp/uboot-firmware.tar.gz" -L "$UBOOT_URL"
-tar -xzf "${ROOTFS_DIR}/tmp/uboot-firmware.tar.gz" -C "${ROOTFS_DIR}/boot/firmware"
+install -m 644 files/start.elf "${ROOTFS_DIR}/boot/firmware/start.elf"
+install -m 644 files/splash.bmp "${ROOTFS_DIR}/boot/firmware/splash.bmp"
 
 # Install APPLaunch normally so dpkg registers the package. Then adjust startup
 # state directly in the rootfs; LaunchWizard controls first-boot APPLaunch start.
@@ -140,12 +135,6 @@ cat > "${ROOTFS_DIR}/etc/lightdm/lightdm.conf.d/99-cardputerzero-firstboot.conf"
 autologin-user=rpi-first-boot-wizard
 autologin-session=rpd-labwc
 EOF
-
-# Install U-Boot firmware
-sed -i '1i kernel=u-boot.bin' ${ROOTFS_DIR}/boot/firmware/config.txt
-
-
-
 # Append custom cmdline parameters for CardputerZero.
 sed -i 's/$/ quiet fbcon=map:off cfg80211.ieee80211_regdom=AE/' \
     "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
@@ -194,8 +183,7 @@ Storage=persistent
 SystemMaxUse=50M
 EOF
 
-# Root partition resize on first boot (U-Boot skips initramfs so
-# raspberrypi-sys-mods' resize_early never runs)
+# Root partition resize fallback on first boot.
 install -m 755 -d "${ROOTFS_DIR}/usr/lib/cardputerzero"
 install -m 755 files/resize-root "${ROOTFS_DIR}/usr/lib/cardputerzero/resize-root"
 install -m 644 files/cardputerzero-resize.service "${ROOTFS_DIR}/etc/systemd/system/cardputerzero-resize.service"
