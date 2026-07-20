@@ -100,6 +100,7 @@ CAMERA_APP_RELEASES_URL="${CAMERA_APP_RELEASES_URL:-https://api.github.com/repos
 FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/repos/CardputerZero/FactoryTest/releases}"
 FILES_RELEASES_URL="${FILES_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Files/releases}"
 IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
+CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
 
 download_and_install_deb \
     "Recorder" \
@@ -137,3 +138,9 @@ download_and_install_deb \
     "$IR_REMOTE_RELEASES_URL" \
     "IR_REMOTE_DEB_URL" \
     'm5cardputerzero-ir-remote_[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Cap-CC1101-SubG-Chat" \
+    "$CAP_CC1101_SUBG_CHAT_RELEASES_URL" \
+    "CAP_CC1101_SUBG_CHAT_DEB_URL" \
+    '[^"/]*[Cc]ap-[Cc][Cc]1101-[Ss]ub[Gg]-[Cc]hat[^"/]*_m5stack1_arm64\.deb'
