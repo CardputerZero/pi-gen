@@ -34,9 +34,9 @@ jobs:
         run: |
           IMG_DATE=$(date +%Y-%m-%d)
           cat > config <<CONFIG
-          IMG_NAME=cardputerzero-trixie-arm64
-          IMG_FILENAME=${IMG_DATE}-cardputerzero-trixie-arm64
-          ARCHIVE_FILENAME=${IMG_DATE}-cardputerzero-trixie-arm64
+          IMG_NAME=cardputerzero-trixie-arm64-test
+          IMG_FILENAME=${IMG_DATE}-cardputerzero-trixie-arm64-test
+          ARCHIVE_FILENAME=${IMG_DATE}-cardputerzero-trixie-arm64-test
           RELEASE=trixie
           DEPLOY_COMPRESSION=xz
           TARGET_HOSTNAME=cardputerzero
@@ -116,10 +116,10 @@ jobs:
             | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+rpt' | head -1 || echo "unknown")
           [ "$KERNEL_VER" = "" ] && KERNEL_VER="unknown"
 
-          # Driver overlay: m5stack/m5stack-linux-dtoverlays master (cloned at depth=1 during build)
+          # Driver overlay: m5stack/m5stack-linux-dtoverlays test (cloned at depth=1 during build)
           DRIVER_REPO="m5stack/m5stack-linux-dtoverlays"
           DRIVER_COMMIT=$(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${DRIVER_REPO}/commits/master" | jq -r '.sha[:7]' || echo "unknown")
+            "https://api.github.com/repos/${DRIVER_REPO}/commits/test" | jq -r '.sha[:7]' || echo "unknown")
 
           echo "launcher_version=$LAUNCHER_TAG" >> "$GITHUB_OUTPUT"
           echo "launcher_release=$LAUNCHER_RELEASE" >> "$GITHUB_OUTPUT"
@@ -130,7 +130,7 @@ jobs:
       - name: Create prerelease
         id: release
         run: |
-          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          TAG="test-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           gh release create "$TAG" \
             --prerelease \
@@ -140,7 +140,7 @@ jobs:
           **Components:**
           - Launcher (APPLaunch): ${{ steps.components.outputs.launcher_version }} (release: ${{ steps.components.outputs.launcher_release }})
           - Kernel: ${{ steps.components.outputs.kernel_version }}
-          - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
+          - Driver overlay: m5stack/m5stack-linux-dtoverlays test @ ${{ steps.components.outputs.driver_commit }}
           - CONFIG_CARDPUTERO_V0_5: y (enabled)" \
             "${{ steps.image.outputs.path }}"
         env:
@@ -155,6 +155,7 @@ jobs:
             "launcher_release": "${{ steps.components.outputs.launcher_release }}",
             "kernel_version": "${{ steps.components.outputs.kernel_version }}",
             "driver_commit": "${{ steps.components.outputs.driver_commit }}",
+            "driver_branch": "test",
             "config_cardputero_v0_5": true
           }
           EOF
@@ -179,7 +180,7 @@ jobs:
           **Components:**
           - Launcher (APPLaunch): ${{ steps.components.outputs.launcher_version }} (release: ${{ steps.components.outputs.launcher_release }})
           - Kernel: ${{ steps.components.outputs.kernel_version }}
-          - Driver overlay: m5stack/m5stack-linux-dtoverlays @ ${{ steps.components.outputs.driver_commit }}
+          - Driver overlay: m5stack/m5stack-linux-dtoverlays test @ ${{ steps.components.outputs.driver_commit }}
           - CONFIG_CARDPUTERO_V0_5: y (enabled)
 
           **OSS Download:** [${OSS_URL}](${OSS_URL})"
@@ -206,7 +207,7 @@ jobs:
       - name: Configure lite build
         run: |
           cat > config <<'CONFIG'
-          IMG_NAME=cardputerzero-trixie-arm64
+          IMG_NAME=cardputerzero-trixie-arm64-test
           RELEASE=trixie
           DEPLOY_COMPRESSION=xz
           TARGET_HOSTNAME=cardputerzero

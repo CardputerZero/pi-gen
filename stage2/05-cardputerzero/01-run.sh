@@ -11,8 +11,9 @@ apt-get install -y --no-install-recommends \
     device-tree-compiler \
     git
 
-# Clone driver source
-git clone --depth=1 https://github.com/m5stack/m5stack-linux-dtoverlays.git /tmp/dtoverlays
+# Clone driver source from the test branch
+git clone --depth=1 --branch test \
+    https://github.com/m5stack/m5stack-linux-dtoverlays.git /tmp/dtoverlays
 
 KVER=$(ls /lib/modules/ | grep rpi-v8 | head -1)
 export KERNELDIR="/lib/modules/${KVER}/build"
