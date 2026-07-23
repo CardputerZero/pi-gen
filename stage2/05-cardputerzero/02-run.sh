@@ -187,7 +187,7 @@ EOF
 install -m 755 -d "${ROOTFS_DIR}/usr/lib/cardputerzero"
 install -m 755 files/resize-root "${ROOTFS_DIR}/usr/lib/cardputerzero/resize-root"
 install -m 644 files/cardputerzero-resize.service "${ROOTFS_DIR}/etc/systemd/system/cardputerzero-resize.service"
-rm "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service"
+rm -f "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service"
 
 on_chroot << 'CHROOT'
 systemctl enable cardputerzero-resize.service
