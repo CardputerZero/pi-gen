@@ -99,6 +99,7 @@ COMPASS_RELEASES_URL="${COMPASS_RELEASES_URL:-https://api.github.com/repos/Cardp
 CAMERA_APP_RELEASES_URL="${CAMERA_APP_RELEASES_URL:-https://api.github.com/repos/CardputerZero/CameraApp/releases}"
 FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/repos/CardputerZero/FactoryTest/releases}"
 FILES_RELEASES_URL="${FILES_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Files/releases}"
+MUSIC_RELEASES_URL="${MUSIC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Music/releases}"
 IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
 CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
 CAP_CC1101_NFC_RELEASES_URL="${CAP_CC1101_NFC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-NFC/releases}"
@@ -134,6 +135,12 @@ download_and_install_deb \
     "$FILES_RELEASES_URL" \
     "FILES_DEB_URL" \
     'm5cardputerzero-files_[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Music" \
+    "$MUSIC_RELEASES_URL" \
+    "MUSIC_DEB_URL" \
+    'm5cardputerzero-music_[^"/]*_m5stack1_arm64\.deb'
 
 download_and_install_deb \
     "IR-Remote" \
