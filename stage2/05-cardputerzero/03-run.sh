@@ -101,6 +101,8 @@ FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/r
 FILES_RELEASES_URL="${FILES_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Files/releases}"
 IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
 CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
+CAP_CC1101_NFC_RELEASES_URL="${CAP_CC1101_NFC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-NFC/releases}"
+CAP_LORA_1262_GPS_RELEASES_URL="${CAP_LORA_1262_GPS_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-LoRa-1262-GPS/releases}"
 
 download_and_install_deb \
     "Recorder" \
@@ -144,3 +146,15 @@ download_and_install_deb \
     "$CAP_CC1101_SUBG_CHAT_RELEASES_URL" \
     "CAP_CC1101_SUBG_CHAT_DEB_URL" \
     '[^"/]*[Cc]ap-[Cc][Cc]1101-[Ss]ub[Gg]-[Cc]hat[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Cap-CC1101-NFC" \
+    "$CAP_CC1101_NFC_RELEASES_URL" \
+    "CAP_CC1101_NFC_DEB_URL" \
+    '[^"/]*[Cc]ap-[Cc][Cc]1101-[Nn][Ff][Cc][^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Cap-LoRa-1262-GPS" \
+    "$CAP_LORA_1262_GPS_RELEASES_URL" \
+    "CAP_LORA_1262_GPS_DEB_URL" \
+    '[^"/]*[Cc]ap-[Ll]o[Rr]a-1262-[Gg][Pp][Ss][^"/]*_m5stack1_arm64\.deb'
