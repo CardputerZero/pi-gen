@@ -13,6 +13,7 @@ RELEASE_NAME="${RELEASE_DATE}-cardputerzero-trixie-arm64"
 RELEASE_DIR="$RELEASE_ROOT/$RELEASE_NAME"
 RELEASE_IMAGE="$RELEASE_DIR/$RELEASE_NAME.img.xz"
 INFO_FILE="${INFO_FILE:-$DEPLOY_DIR/cardputerzero-trixie-arm64.info}"
+IMAGE_DERIVATION="${IMAGE_DERIVATION:-full-build}"
 
 usage() {
     cat <<'EOF'
@@ -23,6 +24,7 @@ Environment:
   RAW_IMAGE        Matching uncompressed .img used for verification.
   RELEASE_DATE     YYYY-MM-DD, defaults to today.
   RELEASE_ROOT     Parent output directory.
+  IMAGE_DERIVATION Provenance label, defaults to full-build.
   VERIFY_IMAGE=0   Skip image verification (not recommended).
   EXPECTED_DTOOVERLAYS_COMMIT / EXPECTED_APPLAUNCH_VERSION
   APPLAUNCH_DEB_URL  Optional source URL recorded in build-info.json.
@@ -90,6 +92,7 @@ if [ -f "$INFO_FILE" ]; then
 fi
 
 export IMAGE_SHA256 PI_GEN_HEAD PI_GEN_BRANCH PI_GEN_WORKTREE KERNEL_VERSION
+export IMAGE_DERIVATION
 export RELEASE_NAME
 python3 - "$RELEASE_DIR/build-info.json" <<'PY'
 import json
@@ -106,6 +109,7 @@ data = {
     "driver_commit": os.environ.get("EXPECTED_DTOOVERLAYS_COMMIT", ""),
     "image_name": f'{os.environ["RELEASE_NAME"]}.img.xz',
     "image_sha256": os.environ["IMAGE_SHA256"],
+    "image_derivation": os.environ["IMAGE_DERIVATION"],
     "release_channel": "local",
     "verify_profile": "full",
 }
@@ -118,6 +122,7 @@ PY
     echo "release_name=$RELEASE_NAME"
     echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "image_sha256=$IMAGE_SHA256"
+    echo "image_derivation=$IMAGE_DERIVATION"
     echo "pi_gen_head=$PI_GEN_HEAD"
     echo "pi_gen_branch=$PI_GEN_BRANCH"
     echo "pi_gen_worktree=$PI_GEN_WORKTREE"

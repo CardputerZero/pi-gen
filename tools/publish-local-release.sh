@@ -71,6 +71,7 @@ NOTES_FILE="$RELEASE_DIR/release-notes.md"
     echo "- pi-gen target: $TARGET"
     echo "- image SHA-256: $(awk '{print $1}' "$SHA_FILE")"
     echo "- source state: $(awk -F= '$1 == "pi_gen_worktree" { print $2 }' "$RELEASE_DIR/release-manifest.txt")"
+    echo "- image derivation: $(awk -F= '$1 == "image_derivation" { print $2 }' "$RELEASE_DIR/release-manifest.txt")"
     echo
     echo "Verify the SHA-256 file before flashing. This is a prerelease."
 } > "$NOTES_FILE"
