@@ -7,3 +7,5 @@ SKIP_IMAGES
 .pc
 *-pc
 .vscode/
+local-packages/*.deb
+local-sources/*.tar.gz
