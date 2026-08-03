@@ -15,9 +15,20 @@ download_and_install_deb() {
     local filename_pattern="$4"
     local apt_options="${5:-}"
 
+    local deb_file_var="${deb_url_var%_URL}_FILE"
+    local deb_source_file="${!deb_file_var:-}"
     local deb_url="${!deb_url_var:-}"
     local deb_file
-    if [ -z "$deb_url" ]; then
+    if [ -n "$deb_source_file" ]; then
+        if [ ! -f "$deb_source_file" ]; then
+            echo "ERROR: ${deb_file_var} does not exist: $deb_source_file"
+            exit 1
+        fi
+        deb_file="${deb_source_file##*/}"
+        echo "Using local ${app_name} package: $deb_source_file"
+        install -m 0644 "$deb_source_file" \
+            "${ROOTFS_DIR}/tmp/${deb_file}"
+    elif [ -z "$deb_url" ]; then
         local response_file
         local http_status
         local curl_exit
@@ -26,7 +37,10 @@ download_and_install_deb() {
         response_file=$(mktemp)
         echo "Querying ${app_name} releases API: ${api_url}"
         set +e
-        http_status=$(curl -sSL "${AUTH_ARGS[@]}" \
+        http_status=$(curl -sSL \
+            --retry 3 --retry-all-errors \
+            --connect-timeout 15 --max-time 120 \
+            "${AUTH_ARGS[@]}" \
             -o "$response_file" \
             -w '%{http_code}' \
             "$api_url")
@@ -75,17 +89,34 @@ PY
         fi
     fi
 
-    if [ -z "$deb_url" ]; then
+    if [ -z "$deb_source_file" ] && [ -z "$deb_url" ]; then
         echo "ERROR: Could not find ${app_name} m5stack1 arm64 deb URL matching ${filename_pattern}"
         exit 1
     fi
 
-    deb_file="${deb_file:-${deb_url##*/}}"
-    echo "Downloading ${app_name} from: $deb_url"
-    curl -fsSL "${AUTH_ARGS[@]}" \
-        -H "Accept: application/octet-stream" \
-        -o "${ROOTFS_DIR}/tmp/${deb_file}" \
-        -L "$deb_url"
+    if [ -z "$deb_source_file" ]; then
+        deb_file="${deb_file:-${deb_url##*/}}"
+        echo "Downloading ${app_name} from: $deb_url"
+        curl -fsSL \
+            --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 \
+            "${AUTH_ARGS[@]}" \
+            -H "Accept: application/octet-stream" \
+            -o "${ROOTFS_DIR}/tmp/${deb_file}" \
+            -L "$deb_url"
+    fi
+
+    local deb_path="${ROOTFS_DIR}/tmp/${deb_file}"
+    if ! dpkg-deb --info "$deb_path" >/dev/null 2>&1; then
+        echo "ERROR: ${app_name} input is not a valid Debian package"
+        exit 1
+    fi
+    if [ "$(dpkg-deb -f "$deb_path" Architecture)" != "arm64" ]; then
+        echo "ERROR: ${app_name} package architecture must be arm64"
+        exit 1
+    fi
+    echo "${app_name} package: $(dpkg-deb -f "$deb_path" Package Version Architecture)"
+    sha256sum "$deb_path"
 
 on_chroot << CHROOT
 set -e
