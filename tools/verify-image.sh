@@ -289,6 +289,20 @@ else
     fail "LaunchWizard first-boot enablement MISSING"
 fi
 
+if debugfs -R "stat var/lib/LaunchWizard/run-oobe" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    pass "LaunchWizard explicit first-boot marker installed"
+else
+    fail "LaunchWizard first-boot marker MISSING"
+fi
+
+if debugfs -R "dump usr/share/APPLaunch/bin/LaunchWizard $TMPDIR/LaunchWizard" \
+        "$TMPDIR/root.ext4" >/dev/null 2>&1 && \
+        grep -a -q '/var/lib/LaunchWizard/run-oobe' "$TMPDIR/LaunchWizard"; then
+    pass "LaunchWizard binary supports the explicit first-boot marker"
+else
+    fail "LaunchWizard binary does not support the first-boot marker"
+fi
+
 if debugfs -R "stat etc/systemd/system/multi-user.target.wants/userconfig.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
     fail "Raspberry Pi console userconfig should not be enabled"
 else

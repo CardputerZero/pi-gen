@@ -121,6 +121,13 @@ install -d "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants"
 ln -sf /usr/lib/systemd/system/LaunchWizard.service \
     "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/LaunchWizard.service"
 
+# The Raspberry Pi userconfig/piwiz entry points are disabled at export time.
+# Use LaunchWizard's explicit one-shot marker so product OOBE stays independent
+# of those upstream desktop files. LaunchWizard removes this after completion.
+install -d -m 700 "${ROOTFS_DIR}/var/lib/LaunchWizard"
+touch "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
+chmod 600 "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
+
 install -d "${ROOTFS_DIR}/usr/lib/systemd/user"
 cat > "${ROOTFS_DIR}/usr/lib/systemd/user/APPLaunch.service" << 'EOF'
 [Unit]
