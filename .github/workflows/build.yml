@@ -8,7 +8,7 @@ on:
       dtoverlays_ref:
         description: Pinned 40-character m5stack-linux-dtoverlays commit
         required: true
-        default: c3b254819307c177a34100b66fe19e52059ce8c4
+        default: 3f6da2e89c47109af48971fbeb6527202e0be137
       applaunch_deb_url:
         description: Fixed APPLaunch arm64 deb asset URL
         required: false
