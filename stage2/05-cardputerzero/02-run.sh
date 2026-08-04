@@ -60,6 +60,13 @@ fi
 
 if [ -z "$DEB_SOURCE_FILE" ]; then
     DEB_FILE="${DEB_FILE:-${DEB_URL##*/}}"
+    case "$DEB_FILE" in
+        *.deb) ;;
+        # Private repositories only serve assets through the releases API, whose
+        # URLs end in a numeric id, and apt only accepts local packages
+        # named *.deb.
+        *) DEB_FILE="applaunch.deb" ;;
+    esac
     echo "Downloading APPLaunch from: $DEB_URL"
     curl -fsSL "${AUTH_ARGS[@]}" \
         -H "Accept: application/octet-stream" \

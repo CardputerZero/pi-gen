@@ -96,6 +96,13 @@ PY
 
     if [ -z "$deb_source_file" ]; then
         deb_file="${deb_file:-${deb_url##*/}}"
+        case "$deb_file" in
+            *.deb) ;;
+            # Private repositories only serve assets through the releases API,
+            # whose URLs end in a numeric id, and apt only accepts local
+            # packages named *.deb.
+            *) deb_file="${app_name}.deb" ;;
+        esac
         echo "Downloading ${app_name} from: $deb_url"
         curl -fsSL \
             --retry 5 --retry-all-errors \
