@@ -166,8 +166,8 @@ jobs:
           FILE="${{ steps.image.outputs.path }}"
           SHA_FILE="${FILE}.sha256"
           (cd "$(dirname "$FILE")" && \
-            sha256sum "$(basename "$FILE")" > "$(basename "$SHA_FILE")")
-          sha256sum -c "$SHA_FILE"
+            sha256sum "$(basename "$FILE")" > "$(basename "$SHA_FILE")" && \
+            sha256sum -c "$(basename "$SHA_FILE")")
 
           IMAGE_SHA=$(awk '{print $1}' "$SHA_FILE")
           LAUNCHER_VERSION=$(grep -oE 'applaunch package installed \(v[^)]+\)' \
