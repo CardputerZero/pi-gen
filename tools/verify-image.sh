@@ -1,22 +1,52 @@
 #!/bin/bash
 # Verify CardputerZero image contains all required customizations.
-# Usage: ./tools/verify-image.sh <image.img>
+# Usage: VERIFY_PROFILE=full|lite ./tools/verify-image.sh <image.img>
 # Exit 0 = all checks pass, Exit 1 = failure (breaks CI)
 
 set -euo pipefail
 
 IMG="${1:?Usage: $0 <image.img>}"
+VERIFY_PROFILE="${VERIFY_PROFILE:-full}"
+EXPECTED_DTOVERLAYS_COMMIT="${EXPECTED_DTOVERLAYS_COMMIT:-}"
+EXPECTED_APPLAUNCH_VERSION="${EXPECTED_APPLAUNCH_VERSION:-}"
 ERRORS=0
+
+case "$VERIFY_PROFILE" in
+    full|lite) ;;
+    *)
+        echo "ERROR: VERIFY_PROFILE must be 'full' or 'lite'" >&2
+        exit 2
+        ;;
+esac
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+cleanup() {
+    mountpoint -q "$TMPDIR/boot" && umount "$TMPDIR/boot" || true
+    rm -rf "$TMPDIR"
+}
+trap cleanup EXIT
 
 fail() { echo "  ✗ $1"; ERRORS=$((ERRORS + 1)); }
 pass() { echo "  ✓ $1"; }
+
+check_aarch64_elf() {
+    local image_path="$1"
+    local label="$2"
+    local output="$TMPDIR/${label}.elf"
+
+    if debugfs -R "dump -p ${image_path} ${output}" \
+        "$TMPDIR/root.ext4" >/dev/null 2>&1 && \
+        readelf -h "$output" 2>/dev/null | grep -Eq 'Machine:[[:space:]]+AArch64'; then
+        pass "$label is an ARM64 ELF"
+    else
+        fail "$label is missing or is not an ARM64 ELF"
+    fi
+}
 
 echo "=========================================="
 echo " CardputerZero Image Verification"
 echo "=========================================="
 echo " Image: $IMG"
+echo " Profile: $VERIFY_PROFILE"
 echo ""
 
 # --- Extract partitions ---
@@ -96,18 +126,36 @@ else
 fi
 
 
-# Check overlay dtbo
+# Check the DTBO selected by config.txt. Multiple board revisions can coexist
+# in /boot/overlays, so checking the first file found can inspect the wrong
+# hardware revision.
 FOUND_CARDPUTERZERO_DTBO=""
-for overlay in "${CARDPUTERZERO_OVERLAYS[@]}"; do
-    dtbo="$TMPDIR/boot/overlays/${overlay}.dtbo"
+if [ -n "$FOUND_CARDPUTERZERO_OVERLAY" ]; then
+    dtbo="$TMPDIR/boot/overlays/${FOUND_CARDPUTERZERO_OVERLAY}.dtbo"
     if [ -f "$dtbo" ]; then
         FOUND_CARDPUTERZERO_DTBO="$dtbo"
-        break
     fi
-done
+fi
 
 if [ -n "$FOUND_CARDPUTERZERO_DTBO" ]; then
     pass "overlays/$(basename "$FOUND_CARDPUTERZERO_DTBO") exists ($(stat -c%s "$FOUND_CARDPUTERZERO_DTBO" 2>/dev/null || stat -f%z "$FOUND_CARDPUTERZERO_DTBO") bytes)"
+
+    if command -v dtc >/dev/null 2>&1 && \
+        dtc -I dtb -O dts -o "$TMPDIR/cardputerzero-overlay.dts" \
+            "$FOUND_CARDPUTERZERO_DTBO" 2>/dev/null; then
+        for property in \
+            "m5stack,mono" \
+            "simple-audio-card,fully-routed" \
+            "Speaker Switch DRV"; do
+            if grep -q "$property" "$TMPDIR/cardputerzero-overlay.dts"; then
+                pass "audio overlay contains: $property"
+            else
+                fail "audio overlay missing: $property"
+            fi
+        done
+    else
+        fail "unable to decompile CardputerZero overlay (install device-tree-compiler)"
+    fi
 else
     fail "CardputerZero overlay dtbo MISSING"
 fi
@@ -169,32 +217,102 @@ echo "[3/6] Kernel modules (/lib/modules/*/extra/)"
 REQUIRED_MODULES=(
     "bq27xxx_battery.ko"  
     "bq27xxx_battery_i2c.ko"
+    "cardputerzero-audio.ko"
     "m5ioe1.ko"
+    "simple-amplifier.ko"
     "tca8418_keypad_m5stack.ko"
     "es8389_m5stack.ko"
     "pwm_bl_m5stack.ko"
     "st7789v_m5stack.ko"
 )
 
+KVER=$(debugfs -R "ls lib/modules" "$TMPDIR/root.ext4" 2>/dev/null |
+    grep -o '[0-9][^ ]*rpi-v8' | head -1)
+if [ -z "$KVER" ]; then
+    fail "unable to identify the rpi-v8 kernel module directory"
+fi
+
 for mod in "${REQUIRED_MODULES[@]}"; do
-    if debugfs -R "ls lib/modules" "$TMPDIR/root.ext4" 2>/dev/null | grep -q .; then
-        KVER=$(debugfs -R "ls lib/modules" "$TMPDIR/root.ext4" 2>/dev/null | grep -o '[0-9][^ ]*rpi-v8')
-        if debugfs -R "stat lib/modules/${KVER}/extra/${mod}" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
-            SIZE=$(debugfs -R "stat lib/modules/${KVER}/extra/${mod}" "$TMPDIR/root.ext4" 2>/dev/null | grep "Size:" | awk '{print $2}')
-            pass "$mod ($SIZE bytes)"
-        else
-            fail "$mod MISSING"
-        fi
+    MODULE_STAT=$(debugfs -R "stat lib/modules/${KVER}/extra/${mod}" \
+        "$TMPDIR/root.ext4" 2>/dev/null || true)
+    SIZE=$(printf '%s\n' "$MODULE_STAT" |
+        sed -n 's/.*Size:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
+    if [ -n "$SIZE" ] && [ "$SIZE" -gt 0 ]; then
+        pass "$mod ($SIZE bytes)"
+    else
+        fail "$mod MISSING or empty"
     fi
 done
+
+DTOVERLAYS_COMMIT=$(debugfs -R "cat etc/cardputerzero-dtoverlays.commit" \
+    "$TMPDIR/root.ext4" 2>/dev/null | tr -d '\r\n' || true)
+if printf '%s\n' "$DTOVERLAYS_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+    pass "dtoverlays source commit recorded ($DTOVERLAYS_COMMIT)"
+    if [ -n "$EXPECTED_DTOVERLAYS_COMMIT" ] && \
+        [ "$DTOVERLAYS_COMMIT" != "$EXPECTED_DTOVERLAYS_COMMIT" ]; then
+        fail "dtoverlays commit mismatch: expected $EXPECTED_DTOVERLAYS_COMMIT"
+    fi
+else
+    fail "dtoverlays source commit MISSING or invalid"
+fi
 
 echo ""
 echo "[4/6] APPLaunch"
 
 if debugfs -R "stat usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
     pass "APPLaunch binary installed"
+    check_aarch64_elf \
+        "usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" \
+        "APPLaunch"
 else
     fail "APPLaunch binary MISSING"
+fi
+
+if debugfs -R "stat usr/share/APPLaunch/bin/LaunchWizard" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
+    pass "LaunchWizard binary installed"
+    check_aarch64_elf \
+        "usr/share/APPLaunch/bin/LaunchWizard" \
+        "LaunchWizard"
+else
+    fail "LaunchWizard binary MISSING"
+fi
+
+if debugfs -R "cat usr/lib/systemd/system/LaunchWizard.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "ExecStart=/usr/share/APPLaunch/bin/LaunchWizard"; then
+    pass "LaunchWizard system service exists"
+else
+    fail "LaunchWizard system service MISSING"
+fi
+
+if debugfs -R "stat etc/systemd/system/multi-user.target.wants/LaunchWizard.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    pass "LaunchWizard enabled for first boot"
+else
+    fail "LaunchWizard first-boot enablement MISSING"
+fi
+
+if debugfs -R "stat var/lib/LaunchWizard/run-oobe" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    pass "LaunchWizard explicit first-boot marker installed"
+else
+    fail "LaunchWizard first-boot marker MISSING"
+fi
+
+if debugfs -R "dump usr/share/APPLaunch/bin/LaunchWizard $TMPDIR/LaunchWizard" \
+        "$TMPDIR/root.ext4" >/dev/null 2>&1 && \
+        grep -a -q '/var/lib/LaunchWizard/run-oobe' "$TMPDIR/LaunchWizard"; then
+    pass "LaunchWizard binary supports the explicit first-boot marker"
+else
+    fail "LaunchWizard binary does not support the first-boot marker"
+fi
+
+if debugfs -R "stat etc/systemd/system/multi-user.target.wants/userconfig.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "Raspberry Pi console userconfig should not be enabled"
+else
+    pass "console userconfig disabled; LaunchWizard owns first boot"
+fi
+
+if debugfs -R "stat etc/xdg/autostart/piwiz.desktop" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "Raspberry Pi desktop piwiz should not be enabled"
+else
+    pass "desktop piwiz disabled; LaunchWizard owns first boot"
 fi
 
 if debugfs -R "cat usr/lib/systemd/user/APPLaunch.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "ExecStart"; then
@@ -219,6 +337,37 @@ if debugfs -R "ls etc/systemd/system/multi-user.target.wants" "$TMPDIR/root.ext4
     fail "APPLaunch system service enabled by default"
 else
     pass "APPLaunch system service not enabled by default"
+fi
+
+if debugfs -R "cat etc/pipewire/pipewire.conf.d/20-rtkit-direct.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "rtportal.enabled = false"; then
+    pass "PipeWire uses RTKit directly"
+else
+    fail "PipeWire direct-RTKit configuration MISSING"
+fi
+
+if debugfs -R "cat etc/systemd/system/user@1000.service.d/20-rtkit-order.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "After=rtkit-daemon.service"; then
+    pass "user@1000 ordered after RTKit"
+else
+    fail "user@1000 RTKit ordering MISSING"
+fi
+
+if debugfs -R "cat home/pi/.config/systemd/user/pipewire.service.d/20-audio-rlimits.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "LimitRTPRIO=20"; then
+    pass "pi PipeWire realtime limits configured"
+else
+    fail "pi PipeWire realtime limits MISSING"
+fi
+
+if debugfs -R "stat etc/systemd/system/multi-user.target.wants/rtkit-daemon.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    pass "rtkit-daemon enabled"
+else
+    fail "rtkit-daemon enablement MISSING"
+fi
+
+PANEL_CONFIG=$(debugfs -R "cat etc/xdg/wf-panel-pi/wf-panel-pi.ini" "$TMPDIR/root.ext4" 2>/dev/null || true)
+if printf '%s\n' "$PANEL_CONFIG" | grep -Eq '^widgets_right=.*(^|[[:space:]])updater([[:space:]]|$)'; then
+    fail "wf-panel-pi updater should be disabled"
+else
+    pass "wf-panel-pi updater disabled; PackageKit remains on demand"
 fi
 
 echo ""
@@ -250,8 +399,21 @@ debugfs -R "cat var/lib/dpkg/status" "$TMPDIR/root.ext4" > "$TMPDIR/dpkg_status"
 echo "  dpkg_status size: $(wc -c < "$TMPDIR/dpkg_status") bytes"
 
 if grep -q "^Package: applaunch$" "$TMPDIR/dpkg_status"; then
-    VER=$(grep -A5 "^Package: applaunch$" "$TMPDIR/dpkg_status" | grep "^Version:" | awk '{print $2}')
+    APPLAUNCH_STATUS=$(sed -n '/^Package: applaunch$/,/^$/p' "$TMPDIR/dpkg_status")
+    VER=$(printf '%s\n' "$APPLAUNCH_STATUS" | \
+        awk '$1 == "Version:" { print $2; exit }')
+    ARCH=$(printf '%s\n' "$APPLAUNCH_STATUS" | \
+        awk '$1 == "Architecture:" { print $2; exit }')
     pass "applaunch package installed (v$VER)"
+    if [ "$ARCH" = "arm64" ]; then
+        pass "applaunch package architecture is arm64"
+    else
+        fail "applaunch package architecture is '$ARCH', expected arm64"
+    fi
+    if [ -n "$EXPECTED_APPLAUNCH_VERSION" ] && \
+        [ "$VER" != "$EXPECTED_APPLAUNCH_VERSION" ]; then
+        fail "applaunch version mismatch: expected $EXPECTED_APPLAUNCH_VERSION"
+    fi
 else
     fail "applaunch package NOT installed"
 fi
@@ -266,6 +428,49 @@ if grep -q "^Package: cmatrix$" "$TMPDIR/dpkg_status"; then
     pass "cmatrix installed"
 else
     fail "cmatrix NOT installed"
+fi
+
+CUSTOM_PACKAGES=(
+    "camera"
+    "factorytest"
+    "m5cardputerzero-cap-cc1101-nfc"
+    "m5cardputerzero-cap-cc1101-subg-chat"
+    "m5cardputerzero-cap-lora-1262-gps"
+    "m5cardputerzero-compass"
+    "m5cardputerzero-files"
+    "m5cardputerzero-ir-remote"
+    "m5cardputerzero-music"
+    "m5cardputerzero-recorder"
+)
+for package in "${CUSTOM_PACKAGES[@]}"; do
+    PACKAGE_STATUS=$(sed -n "/^Package: ${package}$/,/^$/p" "$TMPDIR/dpkg_status")
+    PACKAGE_ARCH=$(printf '%s\n' "$PACKAGE_STATUS" |
+        awk '$1 == "Architecture:" { print $2; exit }')
+    if [ "$PACKAGE_ARCH" = "arm64" ]; then
+        pass "$package installed (arm64)"
+    else
+        fail "$package NOT installed as arm64"
+    fi
+done
+
+if [ "$VERIFY_PROFILE" = "full" ]; then
+    DESKTOP_PACKAGES=(
+        "chromium"
+        "firefox"
+        "libcamera-tools"
+        "python3-picamera2"
+        "rpicam-apps"
+        "vlc"
+    )
+    for package in "${DESKTOP_PACKAGES[@]}"; do
+        if grep -q "^Package: ${package}$" "$TMPDIR/dpkg_status"; then
+            pass "$package installed"
+        else
+            fail "$package NOT installed"
+        fi
+    done
+else
+    pass "desktop-only package checks skipped for lite profile"
 fi
 set -e
 

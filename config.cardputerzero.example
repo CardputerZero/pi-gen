@@ -1,0 +1,24 @@
+# CardputerZero desktop image, matching the repository CI defaults.
+IMG_NAME=cardputerzero-trixie-arm64
+IMG_FILENAME=cardputerzero-trixie-arm64
+ARCHIVE_FILENAME=cardputerzero-trixie-arm64
+RELEASE=trixie
+DEPLOY_COMPRESSION=xz
+TARGET_HOSTNAME=cardputerzero
+
+# LaunchWizard owns first-boot user setup. These credentials are build-time
+# defaults and should not be treated as production secrets.
+FIRST_USER_NAME=pi
+FIRST_USER_PASS=raspberry
+# CardputerZero uses LaunchWizard for first-boot setup. Do not also start the
+# Raspberry Pi console rename dialog on tty8.
+DISABLE_FIRST_BOOT_USER_RENAME=1
+ENABLE_SSH=1
+
+LOCALE_DEFAULT=en_US.UTF-8
+KEYBOARD_KEYMAP=us
+KEYBOARD_LAYOUT="English (US)"
+TIMEZONE_DEFAULT=Asia/Shanghai
+
+# Build through the custom desktop stage; stage5 is skipped separately.
+STAGE_LIST="stage0 stage1 stage2 stage3 stage4"

@@ -8,10 +8,19 @@ if [ -n "$GITHUB_AUTH_TOKEN" ]; then
 fi
 
 LAUNCHER_RELEASES_URL="${LAUNCHER_RELEASES_URL:-https://api.github.com/repos/CardputerZero/launcher/releases}"
+DEB_SOURCE_FILE="${APPLAUNCH_DEB_FILE:-}"
 DEB_URL="${APPLAUNCH_DEB_URL:-}"
 DEB_FILE=""
 
-if [ -z "$DEB_URL" ]; then
+if [ -n "$DEB_SOURCE_FILE" ]; then
+    if [ ! -f "$DEB_SOURCE_FILE" ]; then
+        echo "ERROR: APPLAUNCH_DEB_FILE does not exist: $DEB_SOURCE_FILE"
+        exit 1
+    fi
+    DEB_FILE="${DEB_SOURCE_FILE##*/}"
+    echo "Using local APPLaunch package: $DEB_SOURCE_FILE"
+    install -m 644 "$DEB_SOURCE_FILE" "${ROOTFS_DIR}/tmp/${DEB_FILE}"
+elif [ -z "$DEB_URL" ]; then
     RELEASES_RESPONSE=$(mktemp)
     trap 'rm -f "$RELEASES_RESPONSE"' EXIT
 
@@ -44,17 +53,38 @@ PY
         DEB_URL="${ASSET_INFO#*$'\t'}"
     fi
 fi
-if [ -z "$DEB_URL" ]; then
+if [ -z "$DEB_SOURCE_FILE" ] && [ -z "$DEB_URL" ]; then
     echo "ERROR: Could not find an APPLaunch m5stack1 arm64 deb"
     exit 1
 fi
 
-DEB_FILE="${DEB_FILE:-${DEB_URL##*/}}"
-echo "Downloading APPLaunch from: $DEB_URL"
-curl -fsSL "${AUTH_ARGS[@]}" \
-    -H "Accept: application/octet-stream" \
-    -o "${ROOTFS_DIR}/tmp/${DEB_FILE}" \
-    -L "$DEB_URL"
+if [ -z "$DEB_SOURCE_FILE" ]; then
+    DEB_FILE="${DEB_FILE:-${DEB_URL##*/}}"
+    case "$DEB_FILE" in
+        *.deb) ;;
+        # Private repositories only serve assets through the releases API, whose
+        # URLs end in a numeric id, and apt only accepts local packages
+        # named *.deb.
+        *) DEB_FILE="applaunch.deb" ;;
+    esac
+    echo "Downloading APPLaunch from: $DEB_URL"
+    curl -fsSL "${AUTH_ARGS[@]}" \
+        -H "Accept: application/octet-stream" \
+        -o "${ROOTFS_DIR}/tmp/${DEB_FILE}" \
+        -L "$DEB_URL"
+fi
+
+DEB_PATH="${ROOTFS_DIR}/tmp/${DEB_FILE}"
+if ! dpkg-deb --info "$DEB_PATH" >/dev/null 2>&1; then
+    echo "ERROR: APPLaunch input is not a valid Debian package: $DEB_PATH"
+    exit 1
+fi
+if [ "$(dpkg-deb -f "$DEB_PATH" Architecture)" != "arm64" ]; then
+    echo "ERROR: APPLaunch package architecture must be arm64"
+    exit 1
+fi
+echo "APPLaunch package: $(dpkg-deb -f "$DEB_PATH" Package Version Architecture)"
+sha256sum "$DEB_PATH"
 
 install -m 644 files/start.elf "${ROOTFS_DIR}/boot/firmware/start.elf"
 install -m 644 files/splash.bmp "${ROOTFS_DIR}/boot/firmware/splash.bmp"
@@ -98,6 +128,13 @@ install -d "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants"
 ln -sf /usr/lib/systemd/system/LaunchWizard.service \
     "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/LaunchWizard.service"
 
+# The Raspberry Pi userconfig/piwiz entry points are disabled at export time.
+# Use LaunchWizard's explicit one-shot marker so product OOBE stays independent
+# of those upstream desktop files. LaunchWizard removes this after completion.
+install -d -m 700 "${ROOTFS_DIR}/var/lib/LaunchWizard"
+touch "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
+chmod 600 "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
+
 install -d "${ROOTFS_DIR}/usr/lib/systemd/user"
 cat > "${ROOTFS_DIR}/usr/lib/systemd/user/APPLaunch.service" << 'EOF'
 [Unit]
@@ -119,6 +156,32 @@ EOF
 rm -f "${ROOTFS_DIR}/etc/systemd/user/default.target.wants/APPLaunch.service"
 rm -f "${ROOTFS_DIR}/home/pi/.config/systemd/user/default.target.wants/APPLaunch.service"
 rm -f "${ROOTFS_DIR}/var/lib/systemd/linger/pi"
+
+# Keep realtime media scheduling deterministic on the low-memory target.
+for config_dir in \
+    pipewire.conf.d \
+    pipewire-pulse.conf.d \
+    filter-chain.conf.d \
+    client.conf.d; do
+    install -d "${ROOTFS_DIR}/etc/pipewire/${config_dir}"
+    install -m 644 files/20-rtkit-direct.conf \
+        "${ROOTFS_DIR}/etc/pipewire/${config_dir}/20-rtkit-direct.conf"
+done
+
+install -d "${ROOTFS_DIR}/etc/systemd/system/user@1000.service.d"
+install -m 644 files/20-rtkit-order.conf \
+    "${ROOTFS_DIR}/etc/systemd/system/user@1000.service.d/20-rtkit-order.conf"
+
+for audio_service in pipewire pipewire-pulse filter-chain; do
+    service_dropin="${ROOTFS_DIR}/home/pi/.config/systemd/user/${audio_service}.service.d"
+    install -d -m 755 -o 1000 -g 1000 "$service_dropin"
+    install -m 644 -o 1000 -g 1000 files/20-audio-rlimits.conf \
+        "$service_dropin/20-audio-rlimits.conf"
+done
+
+on_chroot << 'CHROOT'
+systemctl enable rtkit-daemon.service
+CHROOT
 
 install -d "${ROOTFS_DIR}/etc/xdg/autostart"
 cat > "${ROOTFS_DIR}/etc/xdg/autostart/piwiz.desktop" << 'EOF'

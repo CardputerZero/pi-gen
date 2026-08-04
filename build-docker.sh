@@ -56,6 +56,25 @@ CONTAINER_NAME=${CONTAINER_NAME:-pigen_work}
 CONTINUE=${CONTINUE:-0}
 PRESERVE_CONTAINER=${PRESERVE_CONTAINER:-0}
 PIGEN_DOCKER_OPTS=${PIGEN_DOCKER_OPTS:-""}
+BASE_IMAGE=${BASE_IMAGE:-debian:trixie}
+DTOVERLAYS_LOCAL_DIR=${DTOVERLAYS_LOCAL_DIR:-""}
+
+if [ -n "${DTOVERLAYS_LOCAL_DIR}" ]; then
+  DTOVERLAYS_LOCAL_DIR=$(realpath "${DTOVERLAYS_LOCAL_DIR}")
+  if [ ! -d "${DTOVERLAYS_LOCAL_DIR}/.git" ]; then
+    echo "DTOVERLAYS_LOCAL_DIR is not a Git repository: ${DTOVERLAYS_LOCAL_DIR}" 1>&2
+    exit 1
+  fi
+  case "${DTOVERLAYS_LOCAL_DIR}" in
+    *[[:space:]]*)
+      echo "DTOVERLAYS_LOCAL_DIR cannot contain whitespace" 1>&2
+      exit 1
+      ;;
+  esac
+  PIGEN_DOCKER_OPTS="${PIGEN_DOCKER_OPTS} --volume ${DTOVERLAYS_LOCAL_DIR}:/local-dtoverlays:ro"
+  DTOVERLAYS_REPO=file:///local-dtoverlays
+  export DTOVERLAYS_REPO
+fi
 
 if [ -z "${IMG_NAME}" ]; then
 	echo "IMG_NAME not set in 'config'" 1>&2
@@ -82,7 +101,7 @@ fi
 # Modify original build-options to allow config file to be mounted in the docker container
 BUILD_OPTS="$(echo "${BUILD_OPTS:-}" | sed -E 's@\-c\s?([^ ]+)@-c /config@')"
 
-${DOCKER} build --build-arg BASE_IMAGE=debian:trixie -t pi-gen "${DIR}"
+${DOCKER} build --build-arg "BASE_IMAGE=${BASE_IMAGE}" -t pi-gen "${DIR}"
 
 if [ "${CONTAINER_EXISTS}" != "" ]; then
   DOCKER_CMDLINE_NAME="${CONTAINER_NAME}_cont"
@@ -105,9 +124,15 @@ case $(uname -m) in
     ;;
 esac
 
-# Check if qemu-aarch64 and /proc/sys/fs/binfmt_misc are present
+# Check if qemu-aarch64 and /proc/sys/fs/binfmt_misc are present. Prefer the
+# static interpreter: an F-flag binfmt registration can then execute inside a
+# Debian container without depending on the Ubuntu host's dynamic libraries.
 if [[ "${binfmt_misc_required}" == "1" ]]; then
-  if ! qemu_arm=$(which qemu-aarch64) ; then
+  if qemu_arm=$(command -v qemu-aarch64-static); then
+    :
+  elif qemu_arm=$(command -v qemu-aarch64); then
+    :
+  else
     echo "qemu-aarch64 not found (please install qemu-user-binfmt)"
     exit 1
   fi
@@ -119,14 +144,25 @@ if [[ "${binfmt_misc_required}" == "1" ]]; then
     fi
     echo "binfmt_misc mounted"
   fi
-  if ! grep -q "^interpreter ${qemu_arm}" /proc/sys/fs/binfmt_misc/qemu-aarch64* ; then
-    # Register qemu-aarch64 for binfmt_misc
+  binfmt_name="qemu-aarch64-rpi"
+  binfmt_entry="/proc/sys/fs/binfmt_misc/${binfmt_name}"
+  if [ -e "${binfmt_entry}" ] && \
+      ! grep -qx "interpreter ${qemu_arm}" "${binfmt_entry}"; then
+    echo "Replacing stale ${binfmt_name} registration..."
+    sudo sh -c "echo -1 > '${binfmt_entry}'"
+  fi
+  if [ ! -e "${binfmt_entry}" ]; then
+    # Register qemu-aarch64 for binfmt_misc.
     reg="echo ':qemu-aarch64-rpi:M::"\
 "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:"\
 "\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:"\
 "${qemu_arm}:F' > /proc/sys/fs/binfmt_misc/register"
     echo "Registering qemu-aarch64 for binfmt_misc..."
-    sudo bash -c "${reg}" 2>/dev/null || true
+    sudo bash -c "${reg}"
+  fi
+  if ! grep -qx "interpreter ${qemu_arm}" "${binfmt_entry}"; then
+    echo "qemu-aarch64 binfmt registration is invalid" 1>&2
+    exit 1
   fi
 fi
 
@@ -138,12 +174,31 @@ time ${DOCKER} run \
   ${PIGEN_DOCKER_OPTS} \
   --volume "${CONFIG_FILE}":/config:ro \
   -e "GIT_HASH=${GIT_HASH}" \
+  -e "GITHUB_TOKEN" \
+  -e "GH_TOKEN" \
+  -e "APPLAUNCH_DEB_FILE" \
+  -e "APPLAUNCH_DEB_URL" \
+  -e "RECORDER_DEB_FILE" \
+  -e "COMPASS_DEB_FILE" \
+  -e "CAMERA_APP_DEB_FILE" \
+  -e "FACTORY_TEST_DEB_FILE" \
+  -e "FILES_DEB_FILE" \
+  -e "MUSIC_DEB_FILE" \
+  -e "IR_REMOTE_DEB_FILE" \
+  -e "CAP_CC1101_SUBG_CHAT_DEB_FILE" \
+  -e "CAP_CC1101_NFC_DEB_FILE" \
+  -e "CAP_LORA_1262_GPS_DEB_FILE" \
+  -e "LAUNCHER_RELEASES_URL" \
+  -e "DTOVERLAYS_REPO" \
+  -e "DTOVERLAYS_REF" \
+  -e "DTOVERLAYS_ARCHIVE" \
+  -e "DTOVERLAYS_ARCHIVE_SHA256" \
   $DOCKER_CMDLINE_POST \
   pi-gen \
   bash -e -o pipefail -c "
-    dpkg-reconfigure qemu-user-binfmt &&
     # binfmt_misc is sometimes not mounted with debian trixie image
     (mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc || true) &&
+    dpkg-reconfigure qemu-user-binfmt &&
     cd /pi-gen; ./build.sh ${BUILD_OPTS} &&
     rsync -av work/*/build.log deploy/
   " &

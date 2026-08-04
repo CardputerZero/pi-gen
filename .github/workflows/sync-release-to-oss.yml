@@ -114,13 +114,18 @@ jobs:
         id: buildinfo
         run: |
           TAG="${{ steps.release.outputs.tag }}"
-          gh api "repos/${{ github.repository }}/releases/tags/${TAG}" \
-            --jq '.assets[]|select(.name=="build-info.json")|.browser_download_url' \
-            | xargs -r curl -fsSL -o build-info.json || echo '{}' > build-info.json
+          BUILD_INFO_URL=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" \
+            --jq '.assets[]|select(.name=="build-info.json")|.browser_download_url')
+          if [[ -n "$BUILD_INFO_URL" ]]; then
+            curl -fsSL "$BUILD_INFO_URL" -o build-info.json
+          else
+            echo 'WARN: release has no build-info.json; component metadata will be empty'
+            printf '{}\n' > build-info.json
+          fi
           cat build-info.json
           # Export fields
           echo "launcher_version=$(jq -r '.launcher_version // ""' build-info.json)" >> "$GITHUB_OUTPUT"
-          echo "launcher_release=$(jq -r '.launcher_release // ""' build-info.json)" >> "$GITHUB_OUTPUT"
+          echo "launcher_release=$(jq -r '.launcher_release // .launcher_deb_url // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "kernel_version=$(jq -r '.kernel_version // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "driver_commit=$(jq -r '.driver_commit // ""' build-info.json)" >> "$GITHUB_OUTPUT"
           echo "pigen_commit=$(jq -r '.pigen_commit // ""' build-info.json)" >> "$GITHUB_OUTPUT"
