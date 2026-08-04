@@ -431,7 +431,7 @@ else
 fi
 
 CUSTOM_PACKAGES=(
-    "cameraapp"
+    "camera"
     "factorytest"
     "m5cardputerzero-cap-cc1101-nfc"
     "m5cardputerzero-cap-cc1101-subg-chat"
