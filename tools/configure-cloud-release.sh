@@ -11,7 +11,7 @@ usage() {
 Usage: [environment variables] tools/configure-cloud-release.sh [--dry-run]
 
 Required environment:
-  DTOOVERLAYS_REF             40-character source commit
+  DTOVERLAYS_REF             40-character source commit
   APPLAUNCH_DEB_URL           Fixed arm64 deb release asset URL
   RECORDER_DEB_URL            Fixed arm64 deb release asset URL
   EXPECTED_APPLAUNCH_VERSION  Exact Debian package version
@@ -30,13 +30,13 @@ case "${1:-}" in
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
 esac
 
-: "${DTOOVERLAYS_REF:?DTOOVERLAYS_REF is required}"
+: "${DTOVERLAYS_REF:?DTOVERLAYS_REF is required}"
 : "${APPLAUNCH_DEB_URL:?APPLAUNCH_DEB_URL is required}"
 : "${RECORDER_DEB_URL:?RECORDER_DEB_URL is required}"
 : "${EXPECTED_APPLAUNCH_VERSION:?EXPECTED_APPLAUNCH_VERSION is required}"
 
-[[ "$DTOOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "ERROR: DTOOVERLAYS_REF must be a 40-character commit" >&2
+[[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "ERROR: DTOVERLAYS_REF must be a 40-character commit" >&2
     exit 2
 }
 [[ "$APPLAUNCH_DEB_URL" =~ ^https:// ]] || {
@@ -49,7 +49,7 @@ esac
 }
 
 VARIABLE_NAMES=(
-    DTOOVERLAYS_REF
+    DTOVERLAYS_REF
     APPLAUNCH_DEB_URL
     RECORDER_DEB_URL
     EXPECTED_APPLAUNCH_VERSION

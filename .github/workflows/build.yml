@@ -23,7 +23,7 @@ permissions:
   contents: write
 
 env:
-  DTOOVERLAYS_REF: ${{ inputs.dtoverlays_ref || vars.DTOOVERLAYS_REF || 'c3b254819307c177a34100b66fe19e52059ce8c4' }}
+  DTOVERLAYS_REF: ${{ inputs.dtoverlays_ref || vars.DTOVERLAYS_REF || '3f6da2e89c47109af48971fbeb6527202e0be137' }}
   APPLAUNCH_DEB_URL: ${{ inputs.applaunch_deb_url || vars.APPLAUNCH_DEB_URL }}
   RECORDER_DEB_URL: ${{ inputs.recorder_deb_url || vars.RECORDER_DEB_URL }}
   EXPECTED_APPLAUNCH_VERSION: ${{ inputs.expected_applaunch_version || vars.EXPECTED_APPLAUNCH_VERSION }}
@@ -51,8 +51,8 @@ jobs:
       - name: Validate pinned release inputs
         run: |
           set -euo pipefail
-          [[ "$DTOOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "DTOOVERLAYS_REF must be a pinned 40-character commit"
+          [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "DTOVERLAYS_REF must be a pinned 40-character commit"
             exit 1
           }
           test -n "$APPLAUNCH_DEB_URL" || {
@@ -108,7 +108,7 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            DTOOVERLAYS_REF="$DTOOVERLAYS_REF" \
+            DTOVERLAYS_REF="$DTOVERLAYS_REF" \
             APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
@@ -154,7 +154,7 @@ jobs:
           set -o pipefail
           sudo env \
             VERIFY_PROFILE=full \
-            EXPECTED_DTOOVERLAYS_COMMIT="$DTOOVERLAYS_REF" \
+            EXPECTED_DTOVERLAYS_COMMIT="$DTOVERLAYS_REF" \
             EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.image.outputs.raw }}" 2>&1 | \
             tee deploy/full-image-verification.log
@@ -273,7 +273,7 @@ jobs:
       - name: Validate pinned release inputs
         run: |
           set -euo pipefail
-          [[ "$DTOOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]]
           test -n "$APPLAUNCH_DEB_URL"
           test -n "$RECORDER_DEB_URL"
           test -n "$EXPECTED_APPLAUNCH_VERSION"
@@ -311,7 +311,7 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            DTOOVERLAYS_REF="$DTOOVERLAYS_REF" \
+            DTOVERLAYS_REF="$DTOVERLAYS_REF" \
             APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
@@ -345,7 +345,7 @@ jobs:
         run: |
           sudo env \
             VERIFY_PROFILE=lite \
-            EXPECTED_DTOOVERLAYS_COMMIT="$DTOOVERLAYS_REF" \
+            EXPECTED_DTOVERLAYS_COMMIT="$DTOVERLAYS_REF" \
             EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.lite.outputs.raw }}"
 

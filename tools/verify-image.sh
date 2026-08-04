@@ -7,7 +7,7 @@ set -euo pipefail
 
 IMG="${1:?Usage: $0 <image.img>}"
 VERIFY_PROFILE="${VERIFY_PROFILE:-full}"
-EXPECTED_DTOOVERLAYS_COMMIT="${EXPECTED_DTOOVERLAYS_COMMIT:-}"
+EXPECTED_DTOVERLAYS_COMMIT="${EXPECTED_DTOVERLAYS_COMMIT:-}"
 EXPECTED_APPLAUNCH_VERSION="${EXPECTED_APPLAUNCH_VERSION:-}"
 ERRORS=0
 
@@ -244,13 +244,13 @@ for mod in "${REQUIRED_MODULES[@]}"; do
     fi
 done
 
-DTOOVERLAYS_COMMIT=$(debugfs -R "cat etc/cardputerzero-dtoverlays.commit" \
+DTOVERLAYS_COMMIT=$(debugfs -R "cat etc/cardputerzero-dtoverlays.commit" \
     "$TMPDIR/root.ext4" 2>/dev/null | tr -d '\r\n' || true)
-if printf '%s\n' "$DTOOVERLAYS_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
-    pass "dtoverlays source commit recorded ($DTOOVERLAYS_COMMIT)"
-    if [ -n "$EXPECTED_DTOOVERLAYS_COMMIT" ] && \
-        [ "$DTOOVERLAYS_COMMIT" != "$EXPECTED_DTOOVERLAYS_COMMIT" ]; then
-        fail "dtoverlays commit mismatch: expected $EXPECTED_DTOOVERLAYS_COMMIT"
+if printf '%s\n' "$DTOVERLAYS_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+    pass "dtoverlays source commit recorded ($DTOVERLAYS_COMMIT)"
+    if [ -n "$EXPECTED_DTOVERLAYS_COMMIT" ] && \
+        [ "$DTOVERLAYS_COMMIT" != "$EXPECTED_DTOVERLAYS_COMMIT" ]; then
+        fail "dtoverlays commit mismatch: expected $EXPECTED_DTOVERLAYS_COMMIT"
     fi
 else
     fail "dtoverlays source commit MISSING or invalid"
