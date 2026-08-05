@@ -469,6 +469,53 @@ if [ "$VERIFY_PROFILE" = "full" ]; then
             fail "$package NOT installed"
         fi
     done
+
+    FONT_PACKAGES=(
+        "fonts-jetbrains-mono"
+        "fonts-noto-cjk"
+        "fonts-noto-cjk-extra"
+    )
+    for package in "${FONT_PACKAGES[@]}"; do
+        if grep -q "^Package: ${package}$" "$TMPDIR/dpkg_status"; then
+            pass "$package installed"
+        else
+            fail "$package NOT installed"
+        fi
+    done
+
+    KEPT_FONTS=(
+        "usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        "usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"
+        "usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf"
+        "usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+        "usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc"
+    )
+    for font in "${KEPT_FONTS[@]}"; do
+        if debugfs -R "stat ${font}" "$TMPDIR/root.ext4" 2>/dev/null | \
+            grep -q "Size:"; then
+            pass "font present: $(basename "$font")"
+        else
+            fail "font MISSING: $(basename "$font")"
+        fi
+    done
+
+    EXCLUDED_FONTS=(
+        "usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf"
+        "usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf"
+        "usr/share/fonts/truetype/dejavu/DejaVuMathTeXGyre.ttf"
+        "usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Thin.ttf"
+        "usr/share/fonts/truetype/jetbrains-mono/JetBrainsMonoNL-Regular.ttf"
+        "usr/share/fonts/opentype/noto/NotoSansCJK-Thin.ttc"
+        "usr/share/fonts/opentype/noto/NotoSerifCJK-Light.ttc"
+    )
+    for font in "${EXCLUDED_FONTS[@]}"; do
+        if debugfs -R "stat ${font}" "$TMPDIR/root.ext4" 2>/dev/null | \
+            grep -q "Size:"; then
+            fail "excluded font still present: $(basename "$font")"
+        else
+            pass "excluded font absent: $(basename "$font")"
+        fi
+    done
 else
     pass "desktop-only package checks skipped for lite profile"
 fi
