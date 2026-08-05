@@ -1,0 +1,25 @@
+# CardputerZero font trim (see launcher font report, 2026-08-05).
+#
+# Weights below Regular render sub-pixel strokes on the 320x170 panel and are
+# unreadable there, and the JetBrains Mono NL family duplicates the ligature
+# build glyph for glyph. Registering dpkg excludes keeps these files out of
+# the image at install time and out of every future package upgrade.
+
+# fonts-dejavu-extra: thin weight, condensed variants, math symbols
+path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf
+path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed*.ttf
+path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuSerifCondensed*.ttf
+path-exclude=/usr/share/fonts/truetype/dejavu/DejaVuMathTeXGyre.ttf
+
+# fonts-jetbrains-mono: thin weights and the duplicate no-ligature family
+path-exclude=/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Thin*.ttf
+path-exclude=/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-ExtraLight*.ttf
+path-exclude=/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Light*.ttf
+path-exclude=/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMonoNL-*.ttf
+
+# fonts-noto-cjk-extra: thin weights
+path-exclude=/usr/share/fonts/opentype/noto/NotoSansCJK-DemiLight.ttc
+path-exclude=/usr/share/fonts/opentype/noto/NotoSansCJK-Light.ttc
+path-exclude=/usr/share/fonts/opentype/noto/NotoSansCJK-Thin.ttc
+path-exclude=/usr/share/fonts/opentype/noto/NotoSerifCJK-ExtraLight.ttc
+path-exclude=/usr/share/fonts/opentype/noto/NotoSerifCJK-Light.ttc
