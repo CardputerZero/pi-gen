@@ -97,6 +97,12 @@ dpkg -i "/tmp/${DEB_FILE}"
 install -d -m 700 /var/cache/APPLaunch/updates
 install -m 600 "/tmp/${DEB_FILE}" /var/cache/APPLaunch/updates/installed.deb
 rm -f "/tmp/${DEB_FILE}"
+# The package postinst enables the ADB hotplug monitor, but the product
+# default is ADB off. Disable it here rather than in stage4 so the lite
+# profile (which stops after stage2) ships the same default.
+systemctl disable cardputer-adb-hotplug.service adbd.service 2>/dev/null || true
+rm -f /etc/systemd/system/multi-user.target.wants/cardputer-adb-hotplug.service \
+    /etc/systemd/system/multi-user.target.wants/adbd.service
 CHROOT
 
 if [ ! -x "${ROOTFS_DIR}/usr/share/APPLaunch/bin/LaunchWizard" ]; then
