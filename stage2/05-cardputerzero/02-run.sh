@@ -94,6 +94,8 @@ install -m 644 files/splash.bmp "${ROOTFS_DIR}/boot/firmware/splash.bmp"
 on_chroot << CHROOT
 set -e
 dpkg -i "/tmp/${DEB_FILE}"
+install -d -m 700 /var/cache/APPLaunch/updates
+install -m 600 "/tmp/${DEB_FILE}" /var/cache/APPLaunch/updates/installed.deb
 rm -f "/tmp/${DEB_FILE}"
 CHROOT
 

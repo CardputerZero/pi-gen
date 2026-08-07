@@ -309,6 +309,30 @@ else
     pass "console userconfig disabled; LaunchWizard owns first boot"
 fi
 
+if debugfs -R "stat etc/systemd/system/display-manager.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "display-manager enabled during product OOBE"
+else
+    pass "display-manager disabled during product OOBE"
+fi
+
+if debugfs -R "stat etc/systemd/system/graphical.target.wants/lightdm.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "LightDM enabled during product OOBE"
+else
+    pass "LightDM disabled during product OOBE"
+fi
+
+if debugfs -R "stat etc/systemd/system/multi-user.target.wants/adbd.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "ADB enabled by default"
+else
+    pass "ADB disabled by default"
+fi
+
+if debugfs -R "stat etc/systemd/system/multi-user.target.wants/cardputer-adb-hotplug.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    fail "ADB hotplug monitor enabled while ADB defaults off"
+else
+    pass "ADB hotplug monitor disabled by default"
+fi
+
 if debugfs -R "stat etc/xdg/autostart/piwiz.desktop" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
     fail "Raspberry Pi desktop piwiz should not be enabled"
 else
@@ -430,8 +454,22 @@ else
     fail "cmatrix NOT installed"
 fi
 
+CAMERA_PACKAGE=""
+for package in cameraapp camera; do
+    PACKAGE_STATUS=$(sed -n "/^Package: ${package}$/,/^$/p" "$TMPDIR/dpkg_status")
+    PACKAGE_ARCH=$(printf '%s\n' "$PACKAGE_STATUS" |
+        awk '$1 == "Architecture:" { print $2; exit }')
+    if [ "$PACKAGE_ARCH" = "arm64" ]; then
+        CAMERA_PACKAGE="$package"
+        pass "$package installed (arm64)"
+        break
+    fi
+done
+if [ -z "$CAMERA_PACKAGE" ]; then
+    fail "CameraApp NOT installed as arm64 (accepted packages: cameraapp or camera)"
+fi
+
 CUSTOM_PACKAGES=(
-    "camera"
     "factorytest"
     "m5cardputerzero-cap-cc1101-nfc"
     "m5cardputerzero-cap-cc1101-subg-chat"
