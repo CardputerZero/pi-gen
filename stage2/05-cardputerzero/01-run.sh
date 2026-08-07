@@ -27,6 +27,8 @@ printf 'DTOVERLAYS_REPO=%q\nDTOVERLAYS_REF=%q\nDTOVERLAYS_ARCHIVE=%q\nDTOVERLAYS
     "$DTOVERLAYS_REPO" "$DTOVERLAYS_REF" \
     "$CHROOT_DTOVERLAYS_ARCHIVE" "$DTOVERLAYS_ARCHIVE_SHA256" \
     > "${ROOTFS_DIR}/tmp/cardputerzero-dtoverlays.env"
+install -m 0644 files/cardputerzero-extport-permissions.patch \
+    "${ROOTFS_DIR}/tmp/cardputerzero-extport-permissions.patch"
 install -d -m 0755 "${ROOTFS_DIR}/opt"
 # The upstream config_setup target otherwise downloads this unpinned Gist.
 install -m 0755 files/rpi-config.py "${ROOTFS_DIR}/opt/rpi-config.py"
@@ -71,6 +73,18 @@ else
         > /etc/cardputerzero-dtoverlays.commit
 fi
 
+if git -C /tmp/dtoverlays apply --check \
+        /tmp/cardputerzero-extport-permissions.patch; then
+    git -C /tmp/dtoverlays apply \
+        /tmp/cardputerzero-extport-permissions.patch
+elif git -C /tmp/dtoverlays apply --reverse --check \
+        /tmp/cardputerzero-extport-permissions.patch; then
+    echo "CardputerZero ExtPort permissions are already present in DTOVERLAYS_REF"
+else
+    echo "ERROR: CardputerZero ExtPort permissions do not apply to DTOVERLAYS_REF"
+    exit 1
+fi
+
 KVER=$(ls /lib/modules/ | grep rpi-v8 | head -1)
 export KERNELDIR="/lib/modules/${KVER}/build"
 export EXTRADIR="/lib/modules/${KVER}/extra"
@@ -86,6 +100,7 @@ depmod -a "${KVER}"
 # Clean up build artifacts only (keep all build tools for user driver builds)
 rm -rf /tmp/dtoverlays
 rm -f /tmp/cardputerzero-dtoverlays.env \
-    /tmp/cardputerzero-dtoverlays.tar.gz
+    /tmp/cardputerzero-dtoverlays.tar.gz \
+    /tmp/cardputerzero-extport-permissions.patch
 
 CHROOT

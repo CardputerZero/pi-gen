@@ -18,3 +18,26 @@ if grep -Eq '^widgets_right=.*(^|[[:space:]])updater([[:space:]]|$)' \
     echo "ERROR: failed to disable the wf-panel-pi updater widget" >&2
     exit 1
 fi
+
+# stage3/4 installs the desktop stack after the product OOBE was configured in
+# stage2.  Disable the display manager again at the final image layer so it
+# cannot race the root LaunchWizard for DRM/VT and memory on the first boot.
+on_chroot << 'CHROOT'
+systemctl disable lightdm.service adbd.service cardputer-adb-hotplug.service
+CHROOT
+
+rm -f "${ROOTFS_DIR}/etc/systemd/system/display-manager.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/graphical.target.wants/lightdm.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/cardputer-adb-hotplug.service"
+
+for link in \
+    "${ROOTFS_DIR}/etc/systemd/system/display-manager.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/graphical.target.wants/lightdm.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/cardputer-adb-hotplug.service"; do
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        echo "ERROR: forbidden first-boot service remains enabled: $link" >&2
+        exit 1
+    fi
+done
