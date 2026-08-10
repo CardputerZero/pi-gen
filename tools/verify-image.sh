@@ -209,6 +209,7 @@ else
     pass "cmdline.txt: console=serial0,115200 removed"
 fi
 
+BOOT_CMDLINE=$(cat "$TMPDIR/boot/cmdline.txt" 2>/dev/null || true)
 umount "$TMPDIR/boot" 2>/dev/null || true
 
 echo ""
@@ -321,8 +322,7 @@ else
     pass "LightDM disabled during product OOBE"
 fi
 
-CMDLINE=$(debugfs -R "cat boot/firmware/cmdline.txt" "$TMPDIR/root.ext4" 2>/dev/null || true)
-if printf '%s\n' "$CMDLINE" | grep -Eq '(^|[[:space:]])cma=32M([[:space:]]|$)'; then
+if printf '%s\n' "$BOOT_CMDLINE" | grep -Eq '(^|[[:space:]])cma=32M([[:space:]]|$)'; then
     pass "HDMI desktop CMA set to 32 MiB"
 else
     fail "HDMI desktop CMA setting MISSING"
