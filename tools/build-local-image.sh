@@ -187,6 +187,10 @@ else
 fi
 mv -f "$DTO_ARCHIVE_TMP" "$DTO_ARCHIVE_HOST"
 DTO_ARCHIVE_SHA256=$(sha256sum "$DTO_ARCHIVE_HOST" | awk '{print $1}')
+KEYBOARD_STATE_ABI_REQUIRED=0
+if [ -f "$DTO/modules/tca8418-1.0/cardputerzero_keyboard_state.h" ]; then
+    KEYBOARD_STATE_ABI_REQUIRED=1
+fi
 
 cat >"$CONFIG_FILE" <<EOF
 IMG_NAME=cardputerzero-trixie-arm64
@@ -219,6 +223,7 @@ dtoverlays_worktree_sha256=$DTO_WORKTREE_SHA256
 dtoverlays_build_ref=$DTOVERLAYS_REF
 dtoverlays_snapshot_includes_worktree=$DTO_SNAPSHOT_INCLUDES_WORKTREE
 dtoverlays_archive_sha256=$DTO_ARCHIVE_SHA256
+keyboard_state_abi_required=$KEYBOARD_STATE_ABI_REQUIRED
 applaunch_version=$APPLAUNCH_VERSION
 applaunch_sha256=$APPLAUNCH_SHA256
 recorder_version=$RECORDER_VERSION
@@ -259,6 +264,7 @@ $SUDO env \
     VERIFY_PROFILE=full \
     EXPECTED_DTOVERLAYS_COMMIT="$DTOVERLAYS_REF" \
     EXPECTED_APPLAUNCH_VERSION="$APPLAUNCH_VERSION" \
+    EXPECTED_KEYBOARD_STATE_ABI="$KEYBOARD_STATE_ABI_REQUIRED" \
     "$PIGEN/tools/verify-image.sh" "$RAW_IMAGE" 2>&1 | tee "$VERIFY_LOG"
 grep -Fq 'ALL CHECKS PASSED' "$VERIFY_LOG"
 (
