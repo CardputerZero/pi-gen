@@ -253,6 +253,28 @@ for mod in "${REQUIRED_MODULES[@]}"; do
     fi
 done
 
+KEYBOARD_STATE_HEADER=$(debugfs -R \
+    "cat usr/include/cardputerzero/cardputerzero_keyboard_state.h" \
+    "$TMPDIR/root.ext4" 2>/dev/null || true)
+if printf '%s\n' "$KEYBOARD_STATE_HEADER" | \
+        grep -q '^#define CPZ_KBD_STATE_ABI_VERSION 1$' && \
+        printf '%s\n' "$KEYBOARD_STATE_HEADER" | \
+        grep -q '^#define CPZ_KBD_MSC_RAW_MAGIC'; then
+    pass "CardputerZero keyboard state ABI v1 header installed"
+else
+    fail "CardputerZero keyboard state ABI v1 header MISSING or invalid"
+fi
+
+if debugfs -R \
+        "dump lib/modules/${KVER}/extra/tca8418_keypad_m5stack.ko $TMPDIR/tca8418_keypad_m5stack.ko" \
+        "$TMPDIR/root.ext4" >/dev/null 2>&1 && \
+        strings "$TMPDIR/tca8418_keypad_m5stack.ko" | \
+        grep -q 'version=%u sequence=%llu changed_mask=0x%02x reason=%u'; then
+    pass "TCA8418 module exposes the keyboard modifier-state snapshot"
+else
+    fail "TCA8418 module keyboard modifier-state snapshot MISSING"
+fi
+
 DTOVERLAYS_COMMIT=$(debugfs -R "cat etc/cardputerzero-dtoverlays.commit" \
     "$TMPDIR/root.ext4" 2>/dev/null | tr -d '\r\n' || true)
 if printf '%s\n' "$DTOVERLAYS_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then

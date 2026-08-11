@@ -58,10 +58,30 @@ for repo in "$PIGEN" "$LAUNCHER" "$DTO"; do
         exit 1
     fi
 done
-git -C "$LAUNCHER" submodule status --recursive | grep -Eq '^[-+U]' && {
-    echo "ERROR: launcher submodules do not match the parent gitlinks" >&2
+while IFS= read -r submodule_line; do
+    marker=${submodule_line:0:1}
+    read -r _submodule_commit submodule_path _submodule_tail <<<"${submodule_line:1}"
+    case "$marker" in
+        -|U)
+            echo "ERROR: launcher submodule is unavailable or conflicted: $submodule_path" >&2
+            exit 1
+            ;;
+        +)
+            if [ "$submodule_path" != SDK ]; then
+                echo "ERROR: unexpected launcher submodule mismatch: $submodule_path" >&2
+                exit 1
+            fi
+            echo "Using local launcher/SDK commit outside the parent gitlink: $_submodule_commit"
+            ;;
+    esac
+done < <(git -C "$LAUNCHER" submodule status --recursive)
+
+SDK="$LAUNCHER/SDK"
+git -C "$SDK" rev-parse --verify HEAD >/dev/null
+if git -C "$SDK" diff --name-only --diff-filter=U | grep -q .; then
+    echo "ERROR: unresolved Git conflict in $SDK" >&2
     exit 1
-}
+fi
 
 free_bytes=$(df -PB1 "$WORKSPACE" | awk 'NR == 2 {print $4}')
 minimum_bytes=$((30 * 1024 * 1024 * 1024))
@@ -113,21 +133,6 @@ if [ "$RECORDER_SOURCE_FILE" != "$STAGED_RECORDER" ]; then
     install -m 0644 "$RECORDER_SOURCE_FILE" "$STAGED_RECORDER"
 fi
 
-DTOVERLAYS_REF=${DTOVERLAYS_REF:-$(git -C "$DTO" rev-parse HEAD)}
-[[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "ERROR: DTOVERLAYS_REF must be a 40-character commit" >&2
-    exit 1
-}
-git -C "$DTO" cat-file -e "$DTOVERLAYS_REF^{commit}"
-DTO_ARCHIVE_NAME="m5stack-linux-dtoverlays-$DTOVERLAYS_REF.tar.gz"
-DTO_ARCHIVE_HOST="$PIGEN/local-sources/$DTO_ARCHIVE_NAME"
-DTO_ARCHIVE_TMP="$DTO_ARCHIVE_HOST.tmp"
-git -C "$DTO" archive --format=tar.gz \
-    --prefix="m5stack-linux-dtoverlays-$DTOVERLAYS_REF/" \
-    -o "$DTO_ARCHIVE_TMP" "$DTOVERLAYS_REF"
-mv -f "$DTO_ARCHIVE_TMP" "$DTO_ARCHIVE_HOST"
-DTO_ARCHIVE_SHA256=$(sha256sum "$DTO_ARCHIVE_HOST" | awk '{print $1}')
-
 worktree_fingerprint() {
     repo=$1
     {
@@ -139,6 +144,49 @@ worktree_fingerprint() {
             done
     } | sha256sum | awk '{print $1}'
 }
+
+DTOVERLAYS_REF=${DTOVERLAYS_REF:-$(git -C "$DTO" rev-parse HEAD)}
+[[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "ERROR: DTOVERLAYS_REF must be a 40-character commit" >&2
+    exit 1
+}
+git -C "$DTO" cat-file -e "$DTOVERLAYS_REF^{commit}"
+DTO_ARCHIVE_NAME="m5stack-linux-dtoverlays-$DTOVERLAYS_REF.tar.gz"
+DTO_ARCHIVE_HOST="$PIGEN/local-sources/$DTO_ARCHIVE_NAME"
+DTO_ARCHIVE_TMP="$DTO_ARCHIVE_HOST.tmp"
+DTO_WORKTREE_SHA256=$(worktree_fingerprint "$DTO")
+DTO_SNAPSHOT_INCLUDES_WORKTREE=0
+if [ -z "$(git -C "$DTO" status --porcelain --untracked-files=normal)" ]; then
+    git -C "$DTO" archive --format=tar.gz \
+        --prefix="m5stack-linux-dtoverlays-$DTOVERLAYS_REF/" \
+        -o "$DTO_ARCHIVE_TMP" "$DTOVERLAYS_REF"
+else
+    DTO_SNAPSHOT_INCLUDES_WORKTREE=1
+    DTO_SNAPSHOT_ROOT=$(mktemp -d "$ARTIFACTS/one-click/dto-snapshot.XXXXXX")
+    DTO_SNAPSHOT_NAME="m5stack-linux-dtoverlays-$DTOVERLAYS_REF"
+    DTO_SNAPSHOT_DIR="$DTO_SNAPSHOT_ROOT/$DTO_SNAPSHOT_NAME"
+    DTO_PATCH="$DTO_SNAPSHOT_ROOT/worktree.patch"
+    mkdir -p "$DTO_SNAPSHOT_DIR"
+    git -C "$DTO" archive --format=tar "$DTOVERLAYS_REF" |
+        tar -xf - -C "$DTO_SNAPSHOT_DIR"
+    git -C "$DTO" diff --binary "$DTOVERLAYS_REF" -- >"$DTO_PATCH"
+    if [ -s "$DTO_PATCH" ]; then
+        (cd "$DTO_SNAPSHOT_DIR" && git apply --binary --whitespace=nowarn "$DTO_PATCH")
+    fi
+    while IFS= read -r -d '' file; do
+        target="$DTO_SNAPSHOT_DIR/$file"
+        mkdir -p "$(dirname "$target")"
+        cp -a -- "$DTO/$file" "$target"
+    done < <(git -C "$DTO" ls-files --others --exclude-standard -z)
+    DTO_SOURCE_EPOCH=$(git -C "$DTO" show -s --format=%ct "$DTOVERLAYS_REF")
+    tar --sort=name --mtime="@$DTO_SOURCE_EPOCH" \
+        --owner=0 --group=0 --numeric-owner \
+        -C "$DTO_SNAPSHOT_ROOT" -cf - "$DTO_SNAPSHOT_NAME" |
+        gzip -n >"$DTO_ARCHIVE_TMP"
+    rm -rf -- "$DTO_SNAPSHOT_ROOT"
+fi
+mv -f "$DTO_ARCHIVE_TMP" "$DTO_ARCHIVE_HOST"
+DTO_ARCHIVE_SHA256=$(sha256sum "$DTO_ARCHIVE_HOST" | awk '{print $1}')
 
 cat >"$CONFIG_FILE" <<EOF
 IMG_NAME=cardputerzero-trixie-arm64
@@ -164,9 +212,12 @@ pi_gen_head=$(git -C "$PIGEN" rev-parse HEAD)
 pi_gen_worktree_sha256=$(worktree_fingerprint "$PIGEN")
 launcher_head=$(git -C "$LAUNCHER" rev-parse HEAD)
 launcher_worktree_sha256=$(worktree_fingerprint "$LAUNCHER")
+launcher_sdk_head=$(git -C "$SDK" rev-parse HEAD)
+launcher_sdk_worktree_sha256=$(worktree_fingerprint "$SDK")
 dtoverlays_head=$(git -C "$DTO" rev-parse HEAD)
-dtoverlays_worktree_sha256=$(worktree_fingerprint "$DTO")
+dtoverlays_worktree_sha256=$DTO_WORKTREE_SHA256
 dtoverlays_build_ref=$DTOVERLAYS_REF
+dtoverlays_snapshot_includes_worktree=$DTO_SNAPSHOT_INCLUDES_WORKTREE
 dtoverlays_archive_sha256=$DTO_ARCHIVE_SHA256
 applaunch_version=$APPLAUNCH_VERSION
 applaunch_sha256=$APPLAUNCH_SHA256
