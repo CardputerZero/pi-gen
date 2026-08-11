@@ -209,6 +209,15 @@ else
     pass "cmdline.txt: console=serial0,115200 removed"
 fi
 
+if [ "$VERIFY_PROFILE" = "full" ]; then
+    if grep -Eq '(^|[[:space:]])cma=32M([[:space:]]|$)' \
+            "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+        pass "HDMI desktop CMA set to 32 MiB"
+    else
+        fail "HDMI desktop CMA setting MISSING"
+    fi
+fi
+
 umount "$TMPDIR/boot" 2>/dev/null || true
 
 echo ""
@@ -321,47 +330,42 @@ else
     pass "LightDM disabled during product OOBE"
 fi
 
-CMDLINE=$(debugfs -R "cat boot/firmware/cmdline.txt" "$TMPDIR/root.ext4" 2>/dev/null || true)
-if printf '%s\n' "$CMDLINE" | grep -Eq '(^|[[:space:]])cma=32M([[:space:]]|$)'; then
-    pass "HDMI desktop CMA set to 32 MiB"
-else
-    fail "HDMI desktop CMA setting MISSING"
-fi
+if [ "$VERIFY_PROFILE" = "full" ]; then
+    if debugfs -R "cat usr/libexec/cardputerzero-hdmi-display" "$TMPDIR/root.ext4" 2>/dev/null | \
+            grep -q '/var/lib/LaunchWizard/run-oobe'; then
+        pass "HDMI hotplug helper preserves product OOBE"
+    else
+        fail "HDMI hotplug helper MISSING or unsafe"
+    fi
 
-if debugfs -R "cat usr/libexec/cardputerzero-hdmi-display" "$TMPDIR/root.ext4" 2>/dev/null | \
-        grep -q '/var/lib/LaunchWizard/run-oobe'; then
-    pass "HDMI hotplug helper preserves product OOBE"
-else
-    fail "HDMI hotplug helper MISSING or unsafe"
-fi
+    if debugfs -R "cat usr/lib/systemd/system/cardputerzero-hdmi-display.service" "$TMPDIR/root.ext4" 2>/dev/null | \
+            grep -q 'ExecStart=/usr/libexec/cardputerzero-hdmi-display --monitor'; then
+        pass "HDMI display monitor service installed"
+    else
+        fail "HDMI display monitor service MISSING"
+    fi
 
-if debugfs -R "cat usr/lib/systemd/system/cardputerzero-hdmi-display.service" "$TMPDIR/root.ext4" 2>/dev/null | \
-        grep -q 'ExecStart=/usr/libexec/cardputerzero-hdmi-display --monitor'; then
-    pass "HDMI display monitor service installed"
-else
-    fail "HDMI display monitor service MISSING"
-fi
+    if debugfs -R "stat etc/systemd/system/multi-user.target.wants/cardputerzero-hdmi-display.service" "$TMPDIR/root.ext4" 2>/dev/null | \
+            grep -q "Inode:"; then
+        pass "HDMI display monitor enabled"
+    else
+        fail "HDMI display monitor not enabled"
+    fi
 
-if debugfs -R "stat etc/systemd/system/multi-user.target.wants/cardputerzero-hdmi-display.service" "$TMPDIR/root.ext4" 2>/dev/null | \
-        grep -q "Inode:"; then
-    pass "HDMI display monitor enabled"
-else
-    fail "HDMI display monitor not enabled"
-fi
+    HDMI_RULE=$(debugfs -R "cat usr/lib/udev/rules.d/zz-cardputerzero-hdmi-display.rules" \
+        "$TMPDIR/root.ext4" 2>/dev/null || true)
+    if printf '%s\n' "$HDMI_RULE" | grep -q 'TAG-="master-of-seat"'; then
+        pass "Internal panel excluded from LightDM seats"
+    else
+        fail "Internal panel LightDM seat exclusion MISSING"
+    fi
 
-HDMI_RULE=$(debugfs -R "cat usr/lib/udev/rules.d/zz-cardputerzero-hdmi-display.rules" \
-    "$TMPDIR/root.ext4" 2>/dev/null || true)
-if printf '%s\n' "$HDMI_RULE" | grep -q 'TAG-="master-of-seat"'; then
-    pass "Internal panel excluded from LightDM seats"
-else
-    fail "Internal panel LightDM seat exclusion MISSING"
-fi
-
-if debugfs -R "cat etc/lightdm/lightdm.conf.d/20-cardputerzero-hdmi.conf" \
-        "$TMPDIR/root.ext4" 2>/dev/null | grep -q 'logind-check-graphical=true'; then
-    pass "LightDM restricted to graphical seats"
-else
-    fail "LightDM graphical-seat restriction MISSING"
+    if debugfs -R "cat etc/lightdm/lightdm.conf.d/20-cardputerzero-hdmi.conf" \
+            "$TMPDIR/root.ext4" 2>/dev/null | grep -q 'logind-check-graphical=true'; then
+        pass "LightDM restricted to graphical seats"
+    else
+        fail "LightDM graphical-seat restriction MISSING"
+    fi
 fi
 
 if debugfs -R "stat etc/systemd/system/multi-user.target.wants/adbd.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
