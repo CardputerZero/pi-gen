@@ -557,8 +557,10 @@ CUSTOM_PACKAGES=(
     "m5cardputerzero-cap-lora-1262-gps"
     "m5cardputerzero-compass"
     "m5cardputerzero-files"
+    "m5cardputerzero-ir-chat"
     "m5cardputerzero-ir-remote"
     "m5cardputerzero-music"
+    "m5cardputerzero-piano"
     "m5cardputerzero-recorder"
 )
 for package in "${CUSTOM_PACKAGES[@]}"; do

@@ -13,12 +13,12 @@ Usage: [environment variables] tools/configure-cloud-release.sh [--dry-run]
 Required environment:
   DTOVERLAYS_REF             40-character source commit
   APPLAUNCH_DEB_URL           Fixed arm64 deb release asset URL
-  RECORDER_DEB_URL            Fixed arm64 deb release asset URL
   EXPECTED_APPLAUNCH_VERSION  Exact Debian package version
 
-Optional product app URLs can be set with COMPASS_DEB_URL,
+Optional product app URLs can be set with RECORDER_DEB_URL, COMPASS_DEB_URL,
 CAMERA_APP_DEB_URL, FACTORY_TEST_DEB_URL, FILES_DEB_URL, MUSIC_DEB_URL,
-IR_REMOTE_DEB_URL, CAP_CC1101_SUBG_CHAT_DEB_URL, CAP_CC1101_NFC_DEB_URL,
+IR_CHAT_DEB_URL, PIANO_DEB_URL, IR_REMOTE_DEB_URL, CAP_CC1101_SUBG_CHAT_DEB_URL,
+CAP_CC1101_NFC_DEB_URL,
 and CAP_LORA_1262_GPS_DEB_URL.
 EOF
 }
@@ -32,7 +32,6 @@ esac
 
 : "${DTOVERLAYS_REF:?DTOVERLAYS_REF is required}"
 : "${APPLAUNCH_DEB_URL:?APPLAUNCH_DEB_URL is required}"
-: "${RECORDER_DEB_URL:?RECORDER_DEB_URL is required}"
 : "${EXPECTED_APPLAUNCH_VERSION:?EXPECTED_APPLAUNCH_VERSION is required}"
 
 [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
@@ -43,11 +42,6 @@ esac
     echo "ERROR: APPLAUNCH_DEB_URL must use HTTPS" >&2
     exit 2
 }
-[[ "$RECORDER_DEB_URL" =~ ^https:// ]] || {
-    echo "ERROR: RECORDER_DEB_URL must use HTTPS" >&2
-    exit 2
-}
-
 VARIABLE_NAMES=(
     DTOVERLAYS_REF
     APPLAUNCH_DEB_URL
@@ -58,6 +52,8 @@ VARIABLE_NAMES=(
     FACTORY_TEST_DEB_URL
     FILES_DEB_URL
     MUSIC_DEB_URL
+    IR_CHAT_DEB_URL
+    PIANO_DEB_URL
     IR_REMOTE_DEB_URL
     CAP_CC1101_SUBG_CHAT_DEB_URL
     CAP_CC1101_NFC_DEB_URL

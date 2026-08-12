@@ -32,6 +32,8 @@ env:
   FACTORY_TEST_DEB_URL: ${{ vars.FACTORY_TEST_DEB_URL }}
   FILES_DEB_URL: ${{ vars.FILES_DEB_URL }}
   MUSIC_DEB_URL: ${{ vars.MUSIC_DEB_URL }}
+  IR_CHAT_DEB_URL: ${{ vars.IR_CHAT_DEB_URL }}
+  PIANO_DEB_URL: ${{ vars.PIANO_DEB_URL }}
   IR_REMOTE_DEB_URL: ${{ vars.IR_REMOTE_DEB_URL }}
   CAP_CC1101_SUBG_CHAT_DEB_URL: ${{ vars.CAP_CC1101_SUBG_CHAT_DEB_URL }}
   CAP_CC1101_NFC_DEB_URL: ${{ vars.CAP_CC1101_NFC_DEB_URL }}
@@ -57,10 +59,6 @@ jobs:
           }
           test -n "$APPLAUNCH_DEB_URL" || {
             echo "Set APPLAUNCH_DEB_URL as a workflow input or repository variable"
-            exit 1
-          }
-          test -n "$RECORDER_DEB_URL" || {
-            echo "Set RECORDER_DEB_URL as a workflow input or repository variable"
             exit 1
           }
           test -n "$EXPECTED_APPLAUNCH_VERSION" || {
@@ -116,6 +114,8 @@ jobs:
             FACTORY_TEST_DEB_URL="$FACTORY_TEST_DEB_URL" \
             FILES_DEB_URL="$FILES_DEB_URL" \
             MUSIC_DEB_URL="$MUSIC_DEB_URL" \
+            IR_CHAT_DEB_URL="$IR_CHAT_DEB_URL" \
+            PIANO_DEB_URL="$PIANO_DEB_URL" \
             IR_REMOTE_DEB_URL="$IR_REMOTE_DEB_URL" \
             CAP_CC1101_SUBG_CHAT_DEB_URL="$CAP_CC1101_SUBG_CHAT_DEB_URL" \
             CAP_CC1101_NFC_DEB_URL="$CAP_CC1101_NFC_DEB_URL" \
@@ -275,7 +275,6 @@ jobs:
           set -euo pipefail
           [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]]
           test -n "$APPLAUNCH_DEB_URL"
-          test -n "$RECORDER_DEB_URL"
           test -n "$EXPECTED_APPLAUNCH_VERSION"
 
       - name: Install dependencies
@@ -319,6 +318,8 @@ jobs:
             FACTORY_TEST_DEB_URL="$FACTORY_TEST_DEB_URL" \
             FILES_DEB_URL="$FILES_DEB_URL" \
             MUSIC_DEB_URL="$MUSIC_DEB_URL" \
+            IR_CHAT_DEB_URL="$IR_CHAT_DEB_URL" \
+            PIANO_DEB_URL="$PIANO_DEB_URL" \
             IR_REMOTE_DEB_URL="$IR_REMOTE_DEB_URL" \
             CAP_CC1101_SUBG_CHAT_DEB_URL="$CAP_CC1101_SUBG_CHAT_DEB_URL" \
             CAP_CC1101_NFC_DEB_URL="$CAP_CC1101_NFC_DEB_URL" \

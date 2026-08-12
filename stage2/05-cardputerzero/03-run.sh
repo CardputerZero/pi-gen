@@ -71,14 +71,21 @@ with open(response_path, "r", encoding="utf-8") as f:
 
 releases = data if isinstance(data, list) else [data]
 pattern = re.compile(filename_pattern)
+candidates = []
 for release in releases:
+    if release.get("draft") or release.get("prerelease"):
+        continue
     for asset in release.get("assets", []):
         name = asset.get("name", "")
         browser_url = asset.get("browser_download_url", "")
         api_url = asset.get("url", "")
         if pattern.search(name) or pattern.search(browser_url):
-            print(f"{name}\t{api_url}")
-            raise SystemExit(0)
+            published_at = release.get("published_at") or release.get("created_at") or ""
+            candidates.append((published_at, name, api_url))
+
+if candidates:
+    _, name, api_url = max(candidates)
+    print(f"{name}\t{api_url}")
 PY
 )
         rm -f "$response_file"
@@ -138,6 +145,8 @@ CAMERA_APP_RELEASES_URL="${CAMERA_APP_RELEASES_URL:-https://api.github.com/repos
 FACTORY_TEST_RELEASES_URL="${FACTORY_TEST_RELEASES_URL:-https://api.github.com/repos/CardputerZero/FactoryTest/releases}"
 FILES_RELEASES_URL="${FILES_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Files/releases}"
 MUSIC_RELEASES_URL="${MUSIC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Music/releases}"
+IR_CHAT_RELEASES_URL="${IR_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Chat/releases}"
+PIANO_RELEASES_URL="${PIANO_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Piano/releases}"
 IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
 CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
 CAP_CC1101_NFC_RELEASES_URL="${CAP_CC1101_NFC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-NFC/releases}"
@@ -159,7 +168,7 @@ download_and_install_deb \
     "CameraApp" \
     "$CAMERA_APP_RELEASES_URL" \
     "CAMERA_APP_DEB_URL" \
-    'CameraApp_[^"/]*_m5stack1_arm64\.deb' \
+    '(CameraApp|Camera)_[^"/]*_m5stack1_arm64\.deb' \
     '-o Dpkg::Options::=--force-overwrite'
 
 download_and_install_deb \
@@ -179,6 +188,18 @@ download_and_install_deb \
     "$MUSIC_RELEASES_URL" \
     "MUSIC_DEB_URL" \
     'm5cardputerzero-music_[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "IR-Chat" \
+    "$IR_CHAT_RELEASES_URL" \
+    "IR_CHAT_DEB_URL" \
+    'm5cardputerzero-ir-chat_[^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Piano" \
+    "$PIANO_RELEASES_URL" \
+    "PIANO_DEB_URL" \
+    'm5cardputerzero-piano_[^"/]*_m5stack1_arm64\.deb'
 
 download_and_install_deb \
     "IR-Remote" \
