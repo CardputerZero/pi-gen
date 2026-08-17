@@ -38,6 +38,7 @@ env:
   CAP_CC1101_SUBG_CHAT_DEB_URL: ${{ vars.CAP_CC1101_SUBG_CHAT_DEB_URL }}
   CAP_CC1101_NFC_DEB_URL: ${{ vars.CAP_CC1101_NFC_DEB_URL }}
   CAP_LORA_1262_GPS_DEB_URL: ${{ vars.CAP_LORA_1262_GPS_DEB_URL }}
+  KEYBOARD_GUIDE_DEB_URL: ${{ vars.KEYBOARD_GUIDE_DEB_URL }}
   OSS_ENABLED: ${{ secrets.OSS_ACCESS_KEY_ID != '' && secrets.OSS_ACCESS_KEY_SECRET != '' }}
 
 jobs:
@@ -120,6 +121,7 @@ jobs:
             CAP_CC1101_SUBG_CHAT_DEB_URL="$CAP_CC1101_SUBG_CHAT_DEB_URL" \
             CAP_CC1101_NFC_DEB_URL="$CAP_CC1101_NFC_DEB_URL" \
             CAP_LORA_1262_GPS_DEB_URL="$CAP_LORA_1262_GPS_DEB_URL" \
+            KEYBOARD_GUIDE_DEB_URL="$KEYBOARD_GUIDE_DEB_URL" \
             ./build.sh
         env:
           GITHUB_TOKEN: ${{ secrets.APP_RELEASES_TOKEN || github.token }}
@@ -324,6 +326,7 @@ jobs:
             CAP_CC1101_SUBG_CHAT_DEB_URL="$CAP_CC1101_SUBG_CHAT_DEB_URL" \
             CAP_CC1101_NFC_DEB_URL="$CAP_CC1101_NFC_DEB_URL" \
             CAP_LORA_1262_GPS_DEB_URL="$CAP_LORA_1262_GPS_DEB_URL" \
+            KEYBOARD_GUIDE_DEB_URL="$KEYBOARD_GUIDE_DEB_URL" \
             ./build.sh
         env:
           GITHUB_TOKEN: ${{ secrets.APP_RELEASES_TOKEN || github.token }}

@@ -151,6 +151,7 @@ IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/C
 CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
 CAP_CC1101_NFC_RELEASES_URL="${CAP_CC1101_NFC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-NFC/releases}"
 CAP_LORA_1262_GPS_RELEASES_URL="${CAP_LORA_1262_GPS_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-LoRa-1262-GPS/releases}"
+KEYBOARD_GUIDE_RELEASES_URL="${KEYBOARD_GUIDE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Keyboard-Guide/releases}"
 
 download_and_install_deb \
     "Recorder" \
@@ -224,3 +225,10 @@ download_and_install_deb \
     "$CAP_LORA_1262_GPS_RELEASES_URL" \
     "CAP_LORA_1262_GPS_DEB_URL" \
     '[^"/]*[Cc]ap-[Ll]o[Rr]a-1262-[Gg][Pp][Ss][^"/]*_m5stack1_arm64\.deb'
+
+# First-boot keyboard tutorial, launched once by LaunchWizard before the OOBE.
+download_and_install_deb \
+    "Keyboard-Guide" \
+    "$KEYBOARD_GUIDE_RELEASES_URL" \
+    "KEYBOARD_GUIDE_DEB_URL" \
+    'm5cardputerzero-keyboard-guide_[^"/]*_m5stack1_arm64\.deb'
