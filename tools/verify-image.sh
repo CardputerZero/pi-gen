@@ -312,6 +312,24 @@ else
     fail "LaunchWizard binary does not support the first-boot marker"
 fi
 
+if debugfs -R "stat var/lib/LaunchWizard/run-keyboard-guide" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
+    pass "keyboard guide one-shot marker installed"
+else
+    fail "keyboard guide one-shot marker MISSING"
+fi
+
+if debugfs -R "stat usr/share/APPLaunch/bin/M5CardputerZero-Keyboard-Guide" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
+    pass "keyboard guide binary installed"
+else
+    fail "keyboard guide binary MISSING"
+fi
+
+if debugfs -R "cat usr/lib/systemd/user/APPLaunch.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "ExecStartPre=-/usr/bin/xdg-user-dirs-update"; then
+    pass "APPLaunch user service pre-creates XDG folders"
+else
+    fail "APPLaunch user service does not run xdg-user-dirs-update"
+fi
+
 if debugfs -R "stat etc/systemd/system/multi-user.target.wants/userconfig.service" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Inode:"; then
     fail "Raspberry Pi console userconfig should not be enabled"
 else
@@ -525,6 +543,7 @@ CUSTOM_PACKAGES=(
     "m5cardputerzero-files"
     "m5cardputerzero-ir-chat"
     "m5cardputerzero-ir-remote"
+    "m5cardputerzero-keyboard-guide"
     "m5cardputerzero-music"
     "m5cardputerzero-piano"
     "m5cardputerzero-recorder"

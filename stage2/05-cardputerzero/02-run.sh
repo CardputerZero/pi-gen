@@ -143,6 +143,12 @@ install -d -m 700 "${ROOTFS_DIR}/var/lib/LaunchWizard"
 touch "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
 chmod 600 "${ROOTFS_DIR}/var/lib/LaunchWizard/run-oobe"
 
+# One-shot keyboard tutorial marker: LaunchWizard consumes it on first boot and
+# shows the guide before the OOBE decision, whether or not the OOBE itself runs
+# (Imager-provisioned devices skip the OOBE but still get the guide once).
+touch "${ROOTFS_DIR}/var/lib/LaunchWizard/run-keyboard-guide"
+chmod 600 "${ROOTFS_DIR}/var/lib/LaunchWizard/run-keyboard-guide"
+
 install -d "${ROOTFS_DIR}/usr/lib/systemd/user"
 cat > "${ROOTFS_DIR}/usr/lib/systemd/user/APPLaunch.service" << 'EOF'
 [Unit]
@@ -151,6 +157,9 @@ After=pipewire-pulse.service
 Wants=pipewire-pulse.service
 
 [Service]
+# No desktop session ever runs xdg-user-dirs-update on this product, so create
+# the standard folders (Music, Pictures, ...) before the launcher starts.
+ExecStartPre=-/usr/bin/xdg-user-dirs-update
 ExecStart=/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch
 WorkingDirectory=/usr/share/APPLaunch
 Restart=always
