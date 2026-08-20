@@ -1,0 +1,12 @@
+[Unit]
+Description=Monitor CardputerZero HDMI desktop state
+After=systemd-udevd.service systemd-user-sessions.service LaunchWizard.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/cardputerzero-hdmi-display --monitor
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
