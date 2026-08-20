@@ -57,25 +57,6 @@ CONTINUE=${CONTINUE:-0}
 PRESERVE_CONTAINER=${PRESERVE_CONTAINER:-0}
 PIGEN_DOCKER_OPTS=${PIGEN_DOCKER_OPTS:-""}
 BASE_IMAGE=${BASE_IMAGE:-debian:trixie}
-DTOVERLAYS_LOCAL_DIR=${DTOVERLAYS_LOCAL_DIR:-""}
-
-if [ -n "${DTOVERLAYS_LOCAL_DIR}" ]; then
-  DTOVERLAYS_LOCAL_DIR=$(realpath "${DTOVERLAYS_LOCAL_DIR}")
-  if [ ! -d "${DTOVERLAYS_LOCAL_DIR}/.git" ]; then
-    echo "DTOVERLAYS_LOCAL_DIR is not a Git repository: ${DTOVERLAYS_LOCAL_DIR}" 1>&2
-    exit 1
-  fi
-  case "${DTOVERLAYS_LOCAL_DIR}" in
-    *[[:space:]]*)
-      echo "DTOVERLAYS_LOCAL_DIR cannot contain whitespace" 1>&2
-      exit 1
-      ;;
-  esac
-  PIGEN_DOCKER_OPTS="${PIGEN_DOCKER_OPTS} --volume ${DTOVERLAYS_LOCAL_DIR}:/local-dtoverlays:ro"
-  DTOVERLAYS_REPO=file:///local-dtoverlays
-  export DTOVERLAYS_REPO
-fi
-
 if [ -z "${IMG_NAME}" ]; then
 	echo "IMG_NAME not set in 'config'" 1>&2
 	echo 1>&2
@@ -203,10 +184,6 @@ time ${DOCKER} run \
   -e "CAP_LORA_1262_GPS_DEB_FILE" \
   -e "CAP_LORA_1262_GPS_DEB_URL" \
   -e "LAUNCHER_RELEASES_URL" \
-  -e "DTOVERLAYS_REPO" \
-  -e "DTOVERLAYS_REF" \
-  -e "DTOVERLAYS_ARCHIVE" \
-  -e "DTOVERLAYS_ARCHIVE_SHA256" \
   $DOCKER_CMDLINE_POST \
   pi-gen \
   bash -e -o pipefail -c "

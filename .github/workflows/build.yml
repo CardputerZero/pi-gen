@@ -5,10 +5,6 @@ on:
     branches: [arm64, cardputerzero_v0.6]
   workflow_dispatch:
     inputs:
-      dtoverlays_ref:
-        description: Pinned 40-character m5stack-linux-dtoverlays commit
-        required: true
-        default: 3f6da2e89c47109af48971fbeb6527202e0be137
       applaunch_deb_url:
         description: Fixed APPLaunch arm64 deb asset URL
         required: false
@@ -23,7 +19,6 @@ permissions:
   contents: write
 
 env:
-  DTOVERLAYS_REF: ${{ inputs.dtoverlays_ref || vars.DTOVERLAYS_REF || '3f6da2e89c47109af48971fbeb6527202e0be137' }}
   APPLAUNCH_DEB_URL: ${{ inputs.applaunch_deb_url || vars.APPLAUNCH_DEB_URL }}
   RECORDER_DEB_URL: ${{ inputs.recorder_deb_url || vars.RECORDER_DEB_URL }}
   EXPECTED_APPLAUNCH_VERSION: ${{ inputs.expected_applaunch_version || vars.EXPECTED_APPLAUNCH_VERSION }}
@@ -51,13 +46,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate pinned release inputs
+      - name: Validate release inputs
         run: |
           set -euo pipefail
-          [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "DTOVERLAYS_REF must be a pinned 40-character commit"
-            exit 1
-          }
           test -n "$APPLAUNCH_DEB_URL" || {
             echo "Set APPLAUNCH_DEB_URL as a workflow input or repository variable"
             exit 1
@@ -107,7 +98,6 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            DTOVERLAYS_REF="$DTOVERLAYS_REF" \
             APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
@@ -156,7 +146,6 @@ jobs:
           set -o pipefail
           sudo env \
             VERIFY_PROFILE=full \
-            EXPECTED_DTOVERLAYS_COMMIT="$DTOVERLAYS_REF" \
             EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.image.outputs.raw }}" 2>&1 | \
             tee deploy/full-image-verification.log
@@ -272,10 +261,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate pinned release inputs
+      - name: Validate release inputs
         run: |
           set -euo pipefail
-          [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]]
           test -n "$APPLAUNCH_DEB_URL"
           test -n "$EXPECTED_APPLAUNCH_VERSION"
 
@@ -312,7 +300,6 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            DTOVERLAYS_REF="$DTOVERLAYS_REF" \
             APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
@@ -349,7 +336,6 @@ jobs:
         run: |
           sudo env \
             VERIFY_PROFILE=lite \
-            EXPECTED_DTOVERLAYS_COMMIT="$DTOVERLAYS_REF" \
             EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.lite.outputs.raw }}"
 
