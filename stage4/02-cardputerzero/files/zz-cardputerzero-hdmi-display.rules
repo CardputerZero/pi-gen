@@ -1,5 +1,0 @@
-# APPLaunch owns the internal SPI panel directly; do not let LightDM create a
-# second graphical session for that dedicated seat.
-ACTION!="remove", SUBSYSTEM=="drm", KERNEL=="card*", \
-  ENV{ID_PATH}=="platform-3f204000.spi-cs-0", \
-  TAG-="master-of-seat"
