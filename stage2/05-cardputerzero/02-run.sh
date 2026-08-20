@@ -87,8 +87,15 @@ echo "APPLaunch package: $(dpkg-deb -f "$DEB_PATH" Package Version Architecture)
 sha256sum "$DEB_PATH"
 
 install -m 644 files/start.elf "${ROOTFS_DIR}/boot/firmware/start.elf"
+install -m 644 files/fixup.dat "${ROOTFS_DIR}/boot/firmware/fixup.dat"
 install -m 644 files/splash.bmp "${ROOTFS_DIR}/boot/firmware/splash.bmp"
-
+install -m 644 files/CardputerZero_splash_custom.bin \
+    "${ROOTFS_DIR}/boot/firmware/CardputerZero_splash_custom.bin"
+sed -i \
+    -e '/^splash_screen=/d' \
+    -e '/^gpu_mem=/d' \
+    -e '1i splash_screen=CardputerZero_splash_custom.bin\ngpu_mem=128\n' \
+    "${ROOTFS_DIR}/boot/firmware/config.txt"
 # Install APPLaunch normally so dpkg registers the package. Then adjust startup
 # state directly in the rootfs; LaunchWizard controls first-boot APPLaunch start.
 on_chroot << CHROOT
