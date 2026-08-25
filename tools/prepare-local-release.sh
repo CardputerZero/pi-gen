@@ -26,8 +26,7 @@ Environment:
   RELEASE_ROOT     Parent output directory.
   IMAGE_DERIVATION Provenance label, defaults to full-build.
   VERIFY_IMAGE=0   Skip image verification (not recommended).
-  EXPECTED_DTOVERLAYS_COMMIT / EXPECTED_APPLAUNCH_VERSION
-  APPLAUNCH_DEB_URL  Optional source URL recorded in build-info.json.
+  EXPECTED_DTOVERLAYS_COMMIT / APPLAUNCH_VERSION
 EOF
 }
 
@@ -58,7 +57,7 @@ if [ "${VERIFY_IMAGE:-1}" = "1" ]; then
     sudo env \
         VERIFY_PROFILE=full \
         EXPECTED_DTOVERLAYS_COMMIT="${EXPECTED_DTOVERLAYS_COMMIT:-}" \
-        EXPECTED_APPLAUNCH_VERSION="${EXPECTED_APPLAUNCH_VERSION:-}" \
+        APPLAUNCH_VERSION="${APPLAUNCH_VERSION:-}" \
         "$ROOT/tools/verify-image.sh" "$RAW_IMAGE" 2>&1 |
         tee "$RELEASE_DIR/full-image-verification.log"
 fi
@@ -103,8 +102,7 @@ data = {
     "pigen_commit": os.environ["PI_GEN_HEAD"],
     "pigen_branch": os.environ["PI_GEN_BRANCH"],
     "pigen_worktree": os.environ["PI_GEN_WORKTREE"],
-    "launcher_version": os.environ.get("EXPECTED_APPLAUNCH_VERSION", ""),
-    "launcher_release": os.environ.get("APPLAUNCH_DEB_URL", ""),
+    "launcher_version": os.environ.get("APPLAUNCH_VERSION", ""),
     "kernel_version": os.environ.get("KERNEL_VERSION", ""),
     "driver_commit": os.environ.get("EXPECTED_DTOVERLAYS_COMMIT", ""),
     "image_name": f'{os.environ["RELEASE_NAME"]}.img.xz',
@@ -127,7 +125,7 @@ PY
     echo "pi_gen_branch=$PI_GEN_BRANCH"
     echo "pi_gen_worktree=$PI_GEN_WORKTREE"
     echo "dtoverlays_commit=${EXPECTED_DTOVERLAYS_COMMIT:-not-enforced}"
-    echo "applaunch_version=${EXPECTED_APPLAUNCH_VERSION:-not-enforced}"
+    echo "applaunch_version=${APPLAUNCH_VERSION:-automatic}"
 } > "$RELEASE_DIR/release-manifest.txt"
 
 echo "Local release prepared: $RELEASE_DIR"

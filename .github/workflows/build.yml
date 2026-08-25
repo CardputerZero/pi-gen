@@ -5,23 +5,19 @@ on:
     branches: [arm64, cardputerzero_v0.6]
   workflow_dispatch:
     inputs:
-      applaunch_deb_url:
-        description: Fixed APPLaunch arm64 deb asset URL
+      applaunch_version:
+        description: "Optional APPLaunch Debian version (default: latest release)"
         required: false
       recorder_deb_url:
         description: Fixed Recorder arm64 deb asset URL
-        required: false
-      expected_applaunch_version:
-        description: Debian version expected inside the image
         required: false
 
 permissions:
   contents: write
 
 env:
-  APPLAUNCH_DEB_URL: ${{ inputs.applaunch_deb_url || vars.APPLAUNCH_DEB_URL }}
+  APPLAUNCH_VERSION: ${{ inputs.applaunch_version || vars.APPLAUNCH_VERSION }}
   RECORDER_DEB_URL: ${{ inputs.recorder_deb_url || vars.RECORDER_DEB_URL }}
-  EXPECTED_APPLAUNCH_VERSION: ${{ inputs.expected_applaunch_version || vars.EXPECTED_APPLAUNCH_VERSION }}
   COMPASS_DEB_URL: ${{ vars.COMPASS_DEB_URL }}
   CAMERA_APP_DEB_URL: ${{ vars.CAMERA_APP_DEB_URL }}
   FACTORY_TEST_DEB_URL: ${{ vars.FACTORY_TEST_DEB_URL }}
@@ -49,14 +45,11 @@ jobs:
       - name: Validate release inputs
         run: |
           set -euo pipefail
-          test -n "$APPLAUNCH_DEB_URL" || {
-            echo "Set APPLAUNCH_DEB_URL as a workflow input or repository variable"
-            exit 1
-          }
-          test -n "$EXPECTED_APPLAUNCH_VERSION" || {
-            echo "Set EXPECTED_APPLAUNCH_VERSION as a workflow input or repository variable"
-            exit 1
-          }
+          if [ -n "$APPLAUNCH_VERSION" ]; then
+            echo "APPLaunch source: requested version $APPLAUNCH_VERSION"
+          else
+            echo "APPLaunch source: newest published launcher release"
+          fi
 
       - name: Free disk space
         run: |
@@ -98,7 +91,7 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
+            APPLAUNCH_VERSION="$APPLAUNCH_VERSION" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
             CAMERA_APP_DEB_URL="$CAMERA_APP_DEB_URL" \
@@ -146,7 +139,7 @@ jobs:
           set -o pipefail
           sudo env \
             VERIFY_PROFILE=full \
-            EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
+            APPLAUNCH_VERSION="$APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.image.outputs.raw }}" 2>&1 | \
             tee deploy/full-image-verification.log
 
@@ -181,7 +174,6 @@ jobs:
           {
             "pigen_commit": "${GITHUB_SHA}",
             "launcher_version": "${LAUNCHER_VERSION}",
-            "launcher_deb_url": "${APPLAUNCH_DEB_URL}",
             "kernel_version": "${KERNEL_VERSION}",
             "driver_commit": "${DRIVER_COMMIT}",
             "image_name": "${{ steps.image.outputs.name }}",
@@ -264,8 +256,11 @@ jobs:
       - name: Validate release inputs
         run: |
           set -euo pipefail
-          test -n "$APPLAUNCH_DEB_URL"
-          test -n "$EXPECTED_APPLAUNCH_VERSION"
+          if [ -n "$APPLAUNCH_VERSION" ]; then
+            echo "APPLaunch source: requested version $APPLAUNCH_VERSION"
+          else
+            echo "APPLaunch source: newest published launcher release"
+          fi
 
       - name: Install dependencies
         run: |
@@ -300,7 +295,7 @@ jobs:
           sudo env \
             GITHUB_TOKEN="$GITHUB_TOKEN" \
             XZ_DEFAULTS="-T0" \
-            APPLAUNCH_DEB_URL="$APPLAUNCH_DEB_URL" \
+            APPLAUNCH_VERSION="$APPLAUNCH_VERSION" \
             RECORDER_DEB_URL="$RECORDER_DEB_URL" \
             COMPASS_DEB_URL="$COMPASS_DEB_URL" \
             CAMERA_APP_DEB_URL="$CAMERA_APP_DEB_URL" \
@@ -336,7 +331,7 @@ jobs:
         run: |
           sudo env \
             VERIFY_PROFILE=lite \
-            EXPECTED_APPLAUNCH_VERSION="$EXPECTED_APPLAUNCH_VERSION" \
+            APPLAUNCH_VERSION="$APPLAUNCH_VERSION" \
             ./tools/verify-image.sh "${{ steps.lite.outputs.raw }}"
 
       - name: Upload verified lite artifact

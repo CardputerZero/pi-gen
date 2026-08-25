@@ -261,7 +261,7 @@ push to arm64 branch
     │   ├─ 安装 apt 包
     │   ├─ 克隆 m5stack-linux-dtoverlays，编译内核模块
     │   ├─ 安装 overlay dtbo
-    │   ├─ 下载安装 APPLaunch deb
+    │   ├─ 下载指定 APPLaunch 版本（如未指定则选择最新已发布版本）
     │   ├─ 配置 config.txt / cmdline.txt / modprobe
     │   └─ 输出: YYYY-MM-DD-cardputerzero-trixie-arm64.img.xz
     │

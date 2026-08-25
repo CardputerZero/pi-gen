@@ -8,7 +8,7 @@ set -euo pipefail
 IMG="${1:?Usage: $0 <image.img>}"
 VERIFY_PROFILE="${VERIFY_PROFILE:-full}"
 EXPECTED_DTOVERLAYS_COMMIT="${EXPECTED_DTOVERLAYS_COMMIT:-}"
-EXPECTED_APPLAUNCH_VERSION="${EXPECTED_APPLAUNCH_VERSION:-}"
+APPLAUNCH_VERSION="${APPLAUNCH_VERSION:-}"
 ERRORS=0
 
 case "$VERIFY_PROFILE" in
@@ -499,9 +499,8 @@ if grep -q "^Package: applaunch$" "$TMPDIR/dpkg_status"; then
     else
         fail "applaunch package architecture is '$ARCH', expected arm64"
     fi
-    if [ -n "$EXPECTED_APPLAUNCH_VERSION" ] && \
-        [ "$VER" != "$EXPECTED_APPLAUNCH_VERSION" ]; then
-        fail "applaunch version mismatch: expected $EXPECTED_APPLAUNCH_VERSION"
+    if [ -n "$APPLAUNCH_VERSION" ] && [ "$VER" != "$APPLAUNCH_VERSION" ]; then
+        fail "applaunch version mismatch: expected $APPLAUNCH_VERSION"
     fi
 else
     fail "applaunch package NOT installed"

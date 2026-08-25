@@ -1,5 +1,5 @@
 #!/bin/bash
-# Configure pinned GitHub repository variables consumed by build.yml.
+# Configure GitHub repository variables consumed by build.yml.
 
 set -euo pipefail
 
@@ -12,8 +12,11 @@ Usage: [environment variables] tools/configure-cloud-release.sh [--dry-run]
 
 Required environment:
   DTOVERLAYS_REF             40-character source commit
-  APPLAUNCH_DEB_URL           Fixed arm64 deb release asset URL
-  EXPECTED_APPLAUNCH_VERSION  Exact Debian package version
+
+Optional APPLaunch version can be set with APPLAUNCH_VERSION. Leave it unset
+to select the newest published APPLaunch release automatically. The legacy
+URL and expected-version variables are removed when this script updates the
+repository.
 
 Optional product app URLs can be set with RECORDER_DEB_URL, COMPASS_DEB_URL,
 CAMERA_APP_DEB_URL, FACTORY_TEST_DEB_URL, FILES_DEB_URL, MUSIC_DEB_URL,
@@ -31,22 +34,15 @@ case "${1:-}" in
 esac
 
 : "${DTOVERLAYS_REF:?DTOVERLAYS_REF is required}"
-: "${APPLAUNCH_DEB_URL:?APPLAUNCH_DEB_URL is required}"
-: "${EXPECTED_APPLAUNCH_VERSION:?EXPECTED_APPLAUNCH_VERSION is required}"
 
 [[ "$DTOVERLAYS_REF" =~ ^[0-9a-f]{40}$ ]] || {
     echo "ERROR: DTOVERLAYS_REF must be a 40-character commit" >&2
     exit 2
 }
-[[ "$APPLAUNCH_DEB_URL" =~ ^https:// ]] || {
-    echo "ERROR: APPLAUNCH_DEB_URL must use HTTPS" >&2
-    exit 2
-}
 VARIABLE_NAMES=(
     DTOVERLAYS_REF
-    APPLAUNCH_DEB_URL
+    APPLAUNCH_VERSION
     RECORDER_DEB_URL
-    EXPECTED_APPLAUNCH_VERSION
     COMPASS_DEB_URL
     CAMERA_APP_DEB_URL
     FACTORY_TEST_DEB_URL
@@ -82,6 +78,14 @@ for name in "${VARIABLE_NAMES[@]}"; do
             "$name" "$REPO" "$value"
     else
         gh variable set "$name" --repo "$REPO" --body "$value"
+    fi
+done
+
+for name in APPLAUNCH_DEB_URL EXPECTED_APPLAUNCH_VERSION; do
+    if [ "$DRY_RUN" = "1" ]; then
+        printf 'gh variable delete %q --repo %q\n' "$name" "$REPO"
+    else
+        gh variable delete "$name" --repo "$REPO" 2>/dev/null || true
     fi
 done
 

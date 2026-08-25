@@ -1,15 +1,16 @@
 #!/bin/bash -e
 
-# Download the newest versioned APPLaunch deb outside chroot.
+# Download the requested APPLaunch version, or the newest version when unset.
 AUTH_ARGS=()
 GITHUB_AUTH_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 if [ -n "$GITHUB_AUTH_TOKEN" ]; then
     AUTH_ARGS=(-H "Authorization: Bearer ${GITHUB_AUTH_TOKEN}")
 fi
 
-LAUNCHER_RELEASES_URL="${LAUNCHER_RELEASES_URL:-https://api.github.com/repos/CardputerZero/launcher/releases}"
+LAUNCHER_RELEASES_URL="${LAUNCHER_RELEASES_URL:-https://api.github.com/repos/CardputerZero/launcher/releases?per_page=100}"
 DEB_SOURCE_FILE="${APPLAUNCH_DEB_FILE:-}"
-DEB_URL="${APPLAUNCH_DEB_URL:-}"
+REQUESTED_VERSION="${APPLAUNCH_VERSION:-}"
+DEB_URL=""
 DEB_FILE=""
 
 if [ -n "$DEB_SOURCE_FILE" ]; then
@@ -20,41 +21,54 @@ if [ -n "$DEB_SOURCE_FILE" ]; then
     DEB_FILE="${DEB_SOURCE_FILE##*/}"
     echo "Using local APPLaunch package: $DEB_SOURCE_FILE"
     install -m 644 "$DEB_SOURCE_FILE" "${ROOTFS_DIR}/tmp/${DEB_FILE}"
-elif [ -z "$DEB_URL" ]; then
+else
     RELEASES_RESPONSE=$(mktemp)
     trap 'rm -f "$RELEASES_RESPONSE"' EXIT
 
     echo "Querying APPLaunch releases API: $LAUNCHER_RELEASES_URL"
     curl -fsSL "${AUTH_ARGS[@]}" -o "$RELEASES_RESPONSE" "$LAUNCHER_RELEASES_URL"
 
-    ASSET_INFO=$(python3 - "$RELEASES_RESPONSE" <<'PY'
+    ASSET_INFO=$(python3 - "$RELEASES_RESPONSE" "$REQUESTED_VERSION" <<'PY'
 import json
 import re
 import sys
 
 with open(sys.argv[1], "r", encoding="utf-8") as f:
     releases = json.load(f)
+requested_version = sys.argv[2]
 
 if not isinstance(releases, list):
     releases = [releases]
 
-pattern = re.compile(r"^applaunch_[^/]+[-_]m5stack1_arm64\.deb$", re.IGNORECASE)
+pattern = re.compile(r"^applaunch_(?P<version>.+?)[-_]m5stack1_arm64\.deb$", re.IGNORECASE)
+candidates = []
 for release in releases:
+    if release.get("draft"):
+        continue
+    published_at = release.get("published_at") or release.get("created_at") or ""
     for asset in release.get("assets", []):
         name = asset.get("name", "")
-        if pattern.fullmatch(name):
-            print(f"{name}\t{asset['url']}")
-            raise SystemExit(0)
+        match = pattern.fullmatch(name)
+        if match and (not requested_version or match.group("version") == requested_version):
+            candidates.append((published_at, release.get("tag_name", ""), name, asset["url"]))
+
+if candidates:
+    published_at, tag_name, name, api_url = max(candidates)
+    print(f"{name}\t{api_url}\t{tag_name}\t{published_at}")
 PY
 )
 
     if [ -n "$ASSET_INFO" ]; then
-        DEB_FILE="${ASSET_INFO%%$'\t'*}"
-        DEB_URL="${ASSET_INFO#*$'\t'}"
+        IFS=$'\t' read -r DEB_FILE DEB_URL RELEASE_TAG RELEASE_DATE <<< "$ASSET_INFO"
+        echo "Selected APPLaunch release ${RELEASE_TAG:-unknown} (${RELEASE_DATE:-unknown}): ${DEB_FILE}"
     fi
 fi
 if [ -z "$DEB_SOURCE_FILE" ] && [ -z "$DEB_URL" ]; then
-    echo "ERROR: Could not find an APPLaunch m5stack1 arm64 deb"
+    if [ -n "$REQUESTED_VERSION" ]; then
+        echo "ERROR: Could not find APPLaunch version $REQUESTED_VERSION"
+    else
+        echo "ERROR: Could not find the newest APPLaunch release"
+    fi
     exit 1
 fi
 

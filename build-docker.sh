@@ -158,7 +158,7 @@ time ${DOCKER} run \
   -e "GITHUB_TOKEN" \
   -e "GH_TOKEN" \
   -e "APPLAUNCH_DEB_FILE" \
-  -e "APPLAUNCH_DEB_URL" \
+  -e "APPLAUNCH_VERSION" \
   -e "RECORDER_DEB_FILE" \
   -e "RECORDER_DEB_URL" \
   -e "COMPASS_DEB_FILE" \
