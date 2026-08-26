@@ -16,9 +16,10 @@ download_and_install_deb() {
     local apt_options="${5:-}"
 
     local deb_file_var="${deb_url_var%_URL}_FILE"
-    local deb_source_file="${!deb_file_var:-}"
-    local deb_url="${!deb_url_var:-}"
+    local deb_source_file=""
+    local deb_url=""
     local deb_file
+    echo "Forcing latest ${app_name} release; ignoring ${deb_url_var} and ${deb_file_var}"
     if [ -n "$deb_source_file" ]; then
         if [ ! -f "$deb_source_file" ]; then
             echo "ERROR: ${deb_file_var} does not exist: $deb_source_file"

@@ -40,7 +40,7 @@ requested_version = sys.argv[2]
 if not isinstance(releases, list):
     releases = [releases]
 
-pattern = re.compile(r"^applaunch_(?P<version>.+?)[-_]m5stack1_arm64\.deb$", re.IGNORECASE)
+pattern = re.compile(r"^applaunch_(?P<version>.+)-(?P<revision>[^_]+)_arm64\.deb$", re.IGNORECASE)
 candidates = []
 for release in releases:
     if release.get("draft"):
