@@ -452,6 +452,12 @@ else
     fail "rtkit-daemon enablement MISSING"
 fi
 
+if debugfs -R "cat etc/wireplumber/wireplumber.conf.d/50-cardputerzero-default-volume.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "device.routes.default-sink-volume = 0.42"; then
+    pass "WirePlumber factory default volume raised"
+else
+    fail "WirePlumber factory default volume preset MISSING"
+fi
+
 PANEL_CONFIG=$(debugfs -R "cat etc/xdg/wf-panel-pi/wf-panel-pi.ini" "$TMPDIR/root.ext4" 2>/dev/null || true)
 if printf '%s\n' "$PANEL_CONFIG" | grep -Eq '^widgets_right=.*(^|[[:space:]])updater([[:space:]]|$)'; then
     fail "wf-panel-pi updater should be disabled"
