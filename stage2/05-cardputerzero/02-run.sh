@@ -210,6 +210,13 @@ install -d "${ROOTFS_DIR}/etc/systemd/system/user@1000.service.d"
 install -m 644 files/20-rtkit-order.conf \
     "${ROOTFS_DIR}/etc/systemd/system/user@1000.service.d/20-rtkit-order.conf"
 
+# Factory default output volume: WirePlumber's stock 40% (0.064 linear) is
+# nearly inaudible on the small speaker, and the first-boot keyboard guide
+# plays before anyone can reach the volume settings (bug #262).
+install -d "${ROOTFS_DIR}/etc/wireplumber/wireplumber.conf.d"
+install -m 644 files/50-cardputerzero-default-volume.conf \
+    "${ROOTFS_DIR}/etc/wireplumber/wireplumber.conf.d/50-cardputerzero-default-volume.conf"
+
 for audio_service in pipewire pipewire-pulse filter-chain; do
     service_dropin="${ROOTFS_DIR}/home/pi/.config/systemd/user/${audio_service}.service.d"
     install -d -m 755 -o 1000 -g 1000 "$service_dropin"
