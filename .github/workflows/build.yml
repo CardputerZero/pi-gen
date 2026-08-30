@@ -5,9 +5,6 @@ on:
     branches: [arm64, cardputerzero_v0.6]
   workflow_dispatch:
     inputs:
-      applaunch_version:
-        description: "Optional APPLaunch Debian version (default: latest release)"
-        required: false
       recorder_deb_url:
         description: Fixed Recorder arm64 deb asset URL
         required: false
@@ -16,7 +13,8 @@ permissions:
   contents: write
 
 env:
-  APPLAUNCH_VERSION: ${{ inputs.applaunch_version || vars.APPLAUNCH_VERSION }}
+  # CI images always resolve the newest published APPLaunch release.
+  APPLAUNCH_VERSION: ""
   RECORDER_DEB_URL: ${{ inputs.recorder_deb_url || vars.RECORDER_DEB_URL }}
   COMPASS_DEB_URL: ${{ vars.COMPASS_DEB_URL }}
   CAMERA_APP_DEB_URL: ${{ vars.CAMERA_APP_DEB_URL }}
