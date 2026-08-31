@@ -31,6 +31,13 @@ cd /tmp/dtoverlays/modules/CardputerZero
 make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" CONFIG_CARDPUTERO_V0_5=y install
 make KERNELDIR="$KERNELDIR" EXTRADIR="$EXTRADIR" CONFIG_CARDPUTERO_V0_5=y config_setup
 
+# Reserve 64 MiB of contiguous memory for the KMS display driver.
+CONFIG_FILE=/boot/config.txt
+if [ ! -e "$CONFIG_FILE" ]; then
+    CONFIG_FILE=/boot/firmware/config.txt
+fi
+sed -i 's/^dtoverlay=vc4-kms-v3d$/dtoverlay=vc4-kms-v3d,cma-64/' "$CONFIG_FILE"
+
 # Update module dependencies
 depmod -a "${KVER}"
 
