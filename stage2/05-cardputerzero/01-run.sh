@@ -1,6 +1,10 @@
 #!/bin/bash -e
 
 # Compile and install CardputerZero kernel modules + overlay
+install -d -m 0755 "${ROOTFS_DIR}/opt"
+# The upstream config_setup target otherwise downloads this unpinned Gist.
+install -m 0755 files/rpi-config.py "${ROOTFS_DIR}/opt/rpi-config.py"
+
 on_chroot << 'CHROOT'
 set -e
 
@@ -11,8 +15,12 @@ apt-get install -y --no-install-recommends \
     device-tree-compiler \
     git
 
-# Clone driver source
-git clone --depth=1 https://github.com/m5stack/m5stack-linux-dtoverlays.git /tmp/dtoverlays
+# Always build the latest driver from the main branch.
+rm -rf /tmp/dtoverlays
+git clone --depth=1 https://github.com/m5stack/m5stack-linux-dtoverlays.git \
+    /tmp/dtoverlays
+git -C /tmp/dtoverlays rev-parse HEAD \
+    > /etc/cardputerzero-dtoverlays.commit
 
 KVER=$(ls /lib/modules/ | grep rpi-v8 | head -1)
 export KERNELDIR="/lib/modules/${KVER}/build"
