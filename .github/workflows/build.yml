@@ -80,19 +80,31 @@ jobs:
           if [[ "$FILE" == *.xz ]]; then
             xz -dk "$FILE"
             IMG_RAW="${FILE%.xz}"
+            INFO_FILE="${FILE%.img.xz}.info"
           elif [[ "$FILE" == *.zip ]]; then
             IMG_RAW=$(unzip -Z1 "$FILE" | head -1)
             unzip -o "$FILE" -d "$(dirname "$FILE")"
             IMG_RAW="$(dirname "$FILE")/$IMG_RAW"
+            INFO_FILE="${IMG_RAW%.img}.info"
+          else
+            echo "Unsupported image archive: $FILE"
+            exit 1
+          fi
+          if [[ ! -f "$INFO_FILE" ]]; then
+            echo "Image metadata file not found: $INFO_FILE"
+            exit 1
           fi
           echo "path=$FILE" >> "$GITHUB_OUTPUT"
           echo "raw=$IMG_RAW" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename $FILE)" >> "$GITHUB_OUTPUT"
+          echo "info=$INFO_FILE" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
 
       - name: Verify image contents
         run: |
+          set -o pipefail
           sudo apt-get install -y e2fsprogs
-          sudo ./tools/verify-image.sh "${{ steps.image.outputs.raw }}"
+          sudo ./tools/verify-image.sh "${{ steps.image.outputs.raw }}" 2>&1 | \
+            tee deploy/full-image-verification.log
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -104,22 +116,38 @@ jobs:
         id: components
         run: |
           set -euo pipefail
-          # Launcher: extract from the deb URL we downloaded (contains release tag/commit)
-          LAUNCHER_DEB_URL=$(grep -o 'https://github.com/[^"]*applaunch[^"]*_arm64\.deb' \
-            <(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              https://api.github.com/repos/CardputerZero/launcher/releases) | head -1)
-          LAUNCHER_TAG=$(echo "$LAUNCHER_DEB_URL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-          LAUNCHER_RELEASE=$(echo "$LAUNCHER_DEB_URL" | grep -oE 'download/[^/]+' | sed 's|download/||' || echo "unknown")
+          # Read component versions from the image artifacts, as in the v0.6 CI.
+          VERIFY_LOG="deploy/full-image-verification.log"
+          LAUNCHER_TAG=$(awk '
+            /applaunch package installed \(v/ {
+              value = $0
+              sub(/^.*\(v/, "", value)
+              sub(/\).*$/, "", value)
+              print value
+              exit
+            }
+          ' "$VERIFY_LOG")
+          [ -n "$LAUNCHER_TAG" ] || { echo "APPLaunch version missing from verification log"; exit 1; }
+          LAUNCHER_RELEASE="unknown"
 
-          # Kernel: read from the built image's dpkg status
-          KERNEL_VER=$(sudo debugfs -R "cat etc/dpkg/info/linux-image-*.list" "${{ steps.image.outputs.raw }}" 2>/dev/null \
-            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+rpt' | head -1 || echo "unknown")
-          [ "$KERNEL_VER" = "" ] && KERNEL_VER="unknown"
+          KERNEL_VER=$(awk '$2 == "linux-image-rpi-v8" { print $3; exit }' \
+            "${{ steps.image.outputs.info }}")
+          [ -n "$KERNEL_VER" ] || { echo "Kernel version missing from image metadata"; exit 1; }
 
-          # Driver overlay: m5stack/m5stack-linux-dtoverlays master (cloned at depth=1 during build)
-          DRIVER_REPO="m5stack/m5stack-linux-dtoverlays"
-          DRIVER_COMMIT=$(curl -sH "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${DRIVER_REPO}/commits/master" | jq -r '.sha[:7]' || echo "unknown")
+          DRIVER_COMMIT=$(awk '
+            /dtoverlays source commit recorded \(/ {
+              value = $0
+              sub(/^.*recorded \(/, "", value)
+              sub(/\).*$/, "", value)
+              print value
+              exit
+            }
+          ' "$VERIFY_LOG")
+          [[ "$DRIVER_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Driver overlay commit missing or invalid"
+            exit 1
+          }
+          DRIVER_COMMIT="${DRIVER_COMMIT:0:7}"
 
           echo "launcher_version=$LAUNCHER_TAG" >> "$GITHUB_OUTPUT"
           echo "launcher_release=$LAUNCHER_RELEASE" >> "$GITHUB_OUTPUT"

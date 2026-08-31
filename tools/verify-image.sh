@@ -188,6 +188,14 @@ for mod in "${REQUIRED_MODULES[@]}"; do
     fi
 done
 
+DTOVERLAYS_COMMIT=$(debugfs -R "cat etc/cardputerzero-dtoverlays.commit" \
+    "$TMPDIR/root.ext4" 2>/dev/null | tr -d '\r\n' || true)
+if [[ "$DTOVERLAYS_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    pass "dtoverlays source commit recorded ($DTOVERLAYS_COMMIT)"
+else
+    fail "dtoverlays source commit MISSING or invalid"
+fi
+
 echo ""
 echo "[4/6] APPLaunch"
 
@@ -250,7 +258,8 @@ debugfs -R "cat var/lib/dpkg/status" "$TMPDIR/root.ext4" > "$TMPDIR/dpkg_status"
 echo "  dpkg_status size: $(wc -c < "$TMPDIR/dpkg_status") bytes"
 
 if grep -q "^Package: applaunch$" "$TMPDIR/dpkg_status"; then
-    VER=$(grep -A5 "^Package: applaunch$" "$TMPDIR/dpkg_status" | grep "^Version:" | awk '{print $2}')
+    APPLAUNCH_STATUS=$(sed -n '/^Package: applaunch$/,/^$/p' "$TMPDIR/dpkg_status")
+    VER=$(printf '%s\n' "$APPLAUNCH_STATUS" | awk '$1 == "Version:" { print $2; exit }')
     pass "applaunch package installed (v$VER)"
 else
     fail "applaunch package NOT installed"
