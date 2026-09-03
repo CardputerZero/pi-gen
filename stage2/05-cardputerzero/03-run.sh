@@ -151,6 +151,7 @@ PIANO_RELEASES_URL="${PIANO_RELEASES_URL:-https://api.github.com/repos/Cardputer
 IR_REMOTE_RELEASES_URL="${IR_REMOTE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/IR-Remote/releases}"
 CAP_CC1101_SUBG_CHAT_RELEASES_URL="${CAP_CC1101_SUBG_CHAT_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-SubG-Chat/releases}"
 CAP_CC1101_NFC_RELEASES_URL="${CAP_CC1101_NFC_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-CC1101-NFC/releases}"
+CAP_LORA_1262_RELEASES_URL="${CAP_LORA_1262_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-LoRa-1262/releases}"
 CAP_LORA_1262_GPS_RELEASES_URL="${CAP_LORA_1262_GPS_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Cap-LoRa-1262-GPS/releases}"
 KEYBOARD_GUIDE_RELEASES_URL="${KEYBOARD_GUIDE_RELEASES_URL:-https://api.github.com/repos/CardputerZero/Keyboard-Guide/releases}"
 
@@ -220,6 +221,12 @@ download_and_install_deb \
     "$CAP_CC1101_NFC_RELEASES_URL" \
     "CAP_CC1101_NFC_DEB_URL" \
     '[^"/]*[Cc]ap-[Cc][Cc]1101-[Nn][Ff][Cc][^"/]*_m5stack1_arm64\.deb'
+
+download_and_install_deb \
+    "Cap-LoRa-1262" \
+    "$CAP_LORA_1262_RELEASES_URL" \
+    "CAP_LORA_1262_DEB_URL" \
+    'm5cardputerzero-cap-lora-1262_[^"/]*_m5stack1_arm64\.deb'
 
 download_and_install_deb \
     "Cap-LoRa-1262-GPS" \
