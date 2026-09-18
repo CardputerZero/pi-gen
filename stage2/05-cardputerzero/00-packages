@@ -8,3 +8,5 @@ xdg-user-dirs
 xdg-user-dirs
 fonts-noto-cjk
 fonts-noto-cjk-extra
+python3-gi-cairo
+python3-cairo
