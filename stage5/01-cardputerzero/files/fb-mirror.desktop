@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Screen Mirror
+Comment=Mirror the CardputerZero LCD on the HDMI desktop
+Comment[zh_CN]=在 HDMI 桌面上镜像显示 CardputerZero 小屏画面
+Comment[ja]=CardputerZeroの小型ディスプレイをHDMIデスクトップにミラー表示します
+Exec=/usr/bin/fb-mirror.py
+TryExec=/usr/bin/fb-mirror.py
+Icon=video-display
+Terminal=false
+Categories=AudioVideo;
+Keywords=framebuffer;mirror;display;
+StartupNotify=true
