@@ -4,6 +4,15 @@ on:
   push:
     branches: [arm64]
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: 'Release channel'
+        type: choice
+        required: true
+        default: Beta
+        options:
+          - Beta
+          - Stable
 
 permissions:
   contents: write
@@ -155,13 +164,17 @@ jobs:
           echo "driver_commit=$DRIVER_COMMIT" >> "$GITHUB_OUTPUT"
           echo "Components: launcher=$LAUNCHER_TAG ($LAUNCHER_RELEASE) kernel=$KERNEL_VER driver=$DRIVER_COMMIT"
 
-      - name: Create prerelease
+      - name: Create release
         id: release
         run: |
           TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          RELEASE_FLAGS=(--prerelease)
+          if [[ "$RELEASE_CHANNEL" == "Stable" ]]; then
+            RELEASE_FLAGS=()
+          fi
           gh release create "$TAG" \
-            --prerelease \
+            "${RELEASE_FLAGS[@]}" \
             --title "$TAG" \
             --notes "Built from pi-gen commit ${GITHUB_SHA}
 
@@ -173,6 +186,7 @@ jobs:
             "${{ steps.image.outputs.path }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel || 'Beta' }}
 
       - name: Upload build-info.json to release
         run: |
