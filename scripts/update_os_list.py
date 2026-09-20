@@ -3,7 +3,8 @@
 update_os_list.py — Accumulative update of os-list.json for the M5 Imager.
 
 Adds a new CardputerZero OS entry (or updates an existing one with the same
-tag). Preserves all historical entries so test engineers can flash any version.
+tag). Preserves visible historical entries while hiding legacy prereleases
+before the configured cutoff date.
 
 Usage (called by the CI publish workflow):
     python3 scripts/update_os_list.py \
@@ -21,11 +22,31 @@ Usage (called by the CI publish workflow):
 
 import argparse
 import json
-import sys
+from datetime import date
 
 
 BASE_URL = "https://cardputer-zero-repo.oss-cn-shenzhen.aliyuncs.com"
 ICON_URL = f"{BASE_URL}/icons/cardputerzero.png"
+PRERELEASE_VISIBLE_FROM = date(2026, 9, 20)
+
+
+def is_cardputerzero_entry(entry):
+    """Return whether an os-list entry belongs to this image family."""
+    return (
+        "cardputerzero" in str(entry.get("url", "")).lower()
+        or "cardputerzero" in str(entry.get("name", "")).lower()
+    )
+
+
+def is_hidden_prerelease(entry):
+    """Hide only old CardputerZero prereleases with a valid release date."""
+    if not entry.get("is_prerelease") or not is_cardputerzero_entry(entry):
+        return False
+    try:
+        release_date = date.fromisoformat(entry.get("release_date", ""))
+    except (TypeError, ValueError):
+        return False
+    return release_date < PRERELEASE_VISIBLE_FROM
 
 
 def main():
@@ -101,12 +122,16 @@ def main():
     # Remove any existing entry with the same tag (idempotent re-publish)
     os_list = [e for e in os_list if e.get("tag") != args.tag]
 
+    # Keep old stable builds, but stop exposing legacy CardputerZero betas.
+    hidden = [e for e in os_list if is_hidden_prerelease(e)]
+    os_list = [e for e in os_list if not is_hidden_prerelease(e)]
+
     # If stable release: also update/replace the "stable" alias entry
     if not is_prerelease:
         # Remove old "stable" alias entry
-        os_list = [e for e in os_list if "-stable.img.xz" not in e.get("url", "")]
+        os_list = [e for e in os_list if "-stable.img.xz" not in str(e.get("url", ""))]
         # Also remove legacy "latest" alias if still present
-        os_list = [e for e in os_list if "-latest.img.xz" not in e.get("url", "")]
+        os_list = [e for e in os_list if "-latest.img.xz" not in str(e.get("url", ""))]
         # Insert stable alias as top entry (recommended download)
         stable_entry = dict(new_entry)
         stable_entry["url"] = f"{BASE_URL}/cardputerzero-trixie-arm64-stable.img.xz"
@@ -116,19 +141,21 @@ def main():
     # Find where non-CardputerZero entries start
     insert_idx = len(os_list)
     for i, e in enumerate(os_list):
-        if ("cardputerzero" not in e.get("url", "").lower()
-                and "CardputerZero" not in e.get("name", "")):
+        if not is_cardputerzero_entry(e):
             insert_idx = i
             break
 
-    # Don't duplicate if same URL already exists (from the latest insert above)
-    if not any(e.get("url", "").endswith(args.oss_filename) for e in os_list):
+    # Don't duplicate if same URL already exists (from the latest insert above).
+    # An explicitly requested old prerelease is filtered by the same cutoff.
+    if not is_hidden_prerelease(new_entry) and not any(
+        str(e.get("url", "")).endswith(args.oss_filename) for e in os_list
+    ):
         os_list.insert(insert_idx, new_entry)
 
     # Sort CardputerZero entries: Release first, then Beta — both newest first.
     # Use tag (YYYYMMDD-HHMMSS-commit) for precise ordering within same day.
-    cz_entries = [e for e in os_list if "cardputerzero" in e.get("url", "").lower()]
-    other_entries = [e for e in os_list if "cardputerzero" not in e.get("url", "").lower()]
+    cz_entries = [e for e in os_list if is_cardputerzero_entry(e)]
+    other_entries = [e for e in os_list if not is_cardputerzero_entry(e)]
 
     stable = sorted(
         [e for e in cz_entries if not e.get("is_prerelease")],
@@ -150,7 +177,18 @@ def main():
 
     total_cz = len(stable) + len(beta)
     label = "beta" if is_prerelease else "stable"
-    print(f"✓ Added {args.tag} ({label}), total CardputerZero entries: {total_cz}")
+    if is_hidden_prerelease(new_entry):
+        print(
+            f"✓ Skipped {args.tag} ({label}); prereleases before "
+            f"{PRERELEASE_VISIBLE_FROM.isoformat()} are hidden"
+        )
+    else:
+        print(f"✓ Added {args.tag} ({label}), total CardputerZero entries: {total_cz}")
+    if hidden:
+        print(
+            f"✓ Removed {len(hidden)} legacy CardputerZero prerelease entries "
+            f"before {PRERELEASE_VISIBLE_FROM.isoformat()}"
+        )
     for e in stable + beta:
         flag = "(beta)" if e.get("is_prerelease") else "(建议)"
         print(f"  {e['release_date']} {flag} {e.get('tag','?')}")

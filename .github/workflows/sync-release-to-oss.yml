@@ -127,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Update os-list.json (accumulative — add version, keep history)
+      - name: Update os-list.json (add version, hide legacy prereleases)
         run: |
           ossutil cp "oss://cardputer-zero-repo/os-list.json" os-list.json
 
