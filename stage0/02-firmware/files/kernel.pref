@@ -1,0 +1,4 @@
+# Keep kernel and headers at the CardputerZero tested version.
+Package: linux-base-rpi-v8 linux-base-rpi-2712 linux-image-rpi-v8 linux-image-rpi-2712 linux-headers-rpi-v8 linux-headers-rpi-2712
+Pin: version 1:6.18.39-1+rpt1
+Pin-Priority: 1001
