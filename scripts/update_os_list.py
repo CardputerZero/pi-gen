@@ -27,7 +27,7 @@ from datetime import date
 
 BASE_URL = "https://cardputer-zero-repo.oss-cn-shenzhen.aliyuncs.com"
 ICON_URL = f"{BASE_URL}/icons/cardputerzero.png"
-PRERELEASE_VISIBLE_FROM = date(2026, 9, 20)
+PRERELEASE_VISIBLE_FROM = date(2026, 9, 29)
 
 
 def is_cardputerzero_entry(entry):
