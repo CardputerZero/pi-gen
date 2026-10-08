@@ -40,7 +40,7 @@ def is_cardputerzero_entry(entry):
 
 def is_hidden_prerelease(entry):
     """Hide only old CardputerZero prereleases with a valid release date."""
-    if not entry.get("is_prerelease") or not is_cardputerzero_entry(entry):
+    if not is_cardputerzero_entry(entry):
         return False
     try:
         release_date = date.fromisoformat(entry.get("release_date", ""))
