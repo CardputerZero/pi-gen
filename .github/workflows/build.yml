@@ -13,9 +13,14 @@ on:
         options:
           - Beta
           - Stable
+      applaunch_artifact_url:
+        description: '测试模式：launcher Actions artifact 页面 URL（留空=正常 release 构建）'
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build-desktop:
@@ -62,10 +67,70 @@ jobs:
           # Skip stage5 (full = desktop + recommended extras we don't need)
           touch stage5/SKIP stage5/SKIP_IMAGES
 
+      - name: Validate APPLaunch artifact URL
+        if: github.event_name == 'workflow_dispatch' && inputs.applaunch_artifact_url != ''
+        env:
+          ARTIFACT_URL: ${{ inputs.applaunch_artifact_url }}
+          GH_TOKEN: ${{ secrets.LAUNCHER_ARTIFACT_TOKEN || secrets.APP_RELEASES_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ inputs.release_channel }}" != "Beta" ]]; then
+            echo "::error::测试模式只允许 release_channel=Beta，当前为 '${{ inputs.release_channel }}'"
+            exit 1
+          fi
+
+          URL_RE='^https://github\.com/([^/]+)/([^/]+)/actions/runs/([0-9]+)/artifacts/([0-9]+)/?$'
+          if [[ ! "$ARTIFACT_URL" =~ $URL_RE ]]; then
+            echo "::error::无效的 launcher Actions artifact URL: $ARTIFACT_URL"
+            echo "期望格式: https://github.com/CardputerZero/launcher/actions/runs/<run_id>/artifacts/<artifact_id>"
+            exit 1
+          fi
+
+          owner="${BASH_REMATCH[1]}"
+          repo="${BASH_REMATCH[2]}"
+          run_id="${BASH_REMATCH[3]}"
+          artifact_id="${BASH_REMATCH[4]}"
+
+          if [[ "${owner}/${repo}" != "CardputerZero/launcher" ]]; then
+            echo "::error::测试模式只支持 CardputerZero/launcher 的 artifact，当前为 ${owner}/${repo}"
+            exit 1
+          fi
+
+          API_PATH="repos/${owner}/${repo}/actions/artifacts/${artifact_id}"
+          echo "查询 artifact metadata: ${API_PATH}"
+          if ! ARTIFACT_INFO=$(gh api "$API_PATH" \
+            --jq '[.name, (.size_in_bytes|tostring), (.expired|tostring), ((.workflow_run.id // 0)|tostring)] | @tsv' 2>&1); then
+            echo "::error::无法读取 artifact metadata（${API_PATH}）。请确认 token 对 CardputerZero/launcher 具有 Actions: Read 权限。"
+            echo "$ARTIFACT_INFO"
+            exit 1
+          fi
+          IFS=$'\t' read -r artifact_name size_in_bytes expired meta_run_id <<< "$ARTIFACT_INFO"
+
+          if [[ "$expired" != "false" ]]; then
+            echo "::error::artifact ${artifact_id} 已过期（expired=${expired}），请重新运行 launcher 构建后使用新的 artifact URL"
+            exit 1
+          fi
+          if [[ "$artifact_name" != "applaunch-arm64" ]]; then
+            echo "::error::artifact 名称必须为 applaunch-arm64，当前为 '${artifact_name}'"
+            exit 1
+          fi
+
+          echo "Artifact 校验通过："
+          echo "  name=${artifact_name}"
+          echo "  size_in_bytes=${size_in_bytes}"
+          echo "  run id=${run_id}"
+          echo "  artifact id=${artifact_id}"
+          if [[ "$meta_run_id" != "0" && "$meta_run_id" != "$run_id" ]]; then
+            echo "::warning::artifact metadata 中的 run id (${meta_run_id}) 与 URL 中的 run id (${run_id}) 不一致"
+          fi
+
       - name: Build image
-        run: sudo GITHUB_TOKEN="${GITHUB_TOKEN}" XZ_DEFAULTS="-T0" ./build.sh
+        run: sudo GITHUB_TOKEN="${GITHUB_TOKEN}" APPLAUNCH_ARTIFACT_URL="${APPLAUNCH_ARTIFACT_URL}" APPLAUNCH_ARTIFACT_TOKEN="${APPLAUNCH_ARTIFACT_TOKEN}" XZ_DEFAULTS="-T0" ./build.sh
         env:
           GITHUB_TOKEN: ${{ secrets.APP_RELEASES_TOKEN || github.token }}
+          APPLAUNCH_ARTIFACT_URL: ${{ inputs.applaunch_artifact_url }}
+          APPLAUNCH_ARTIFACT_TOKEN: ${{ secrets.LAUNCHER_ARTIFACT_TOKEN || secrets.APP_RELEASES_TOKEN || github.token }}
 
       - name: Fix deploy permissions
         run: sudo chown -R $(id -u):$(id -g) deploy/

@@ -12,6 +12,92 @@ DEB_SOURCE_FILE="${APPLAUNCH_DEB_FILE:-}"
 REQUESTED_VERSION="${APPLAUNCH_VERSION:-}"
 DEB_URL=""
 DEB_FILE=""
+ARTIFACT_URL="${APPLAUNCH_ARTIFACT_URL:-}"
+
+# Optional test mode: download a specific GitHub Actions artifact instead of a
+# release asset. All of it stays inside this branch so an empty
+# APPLAUNCH_ARTIFACT_URL leaves the release logic below unchanged.
+if [ -n "$ARTIFACT_URL" ] && [ -n "$DEB_SOURCE_FILE" ]; then
+    echo "ERROR: APPLAUNCH_DEB_FILE and APPLAUNCH_ARTIFACT_URL are mutually exclusive; set only one of them"
+    exit 1
+fi
+if [ -n "$ARTIFACT_URL" ]; then
+    if [ -n "$REQUESTED_VERSION" ]; then
+        echo "WARNING: APPLAUNCH_VERSION is ignored when APPLAUNCH_ARTIFACT_URL is set"
+    fi
+
+    if [[ ! "$ARTIFACT_URL" =~ ^https://github\.com/([^/]+)/([^/]+)/actions/runs/([0-9]+)/artifacts/([0-9]+)/?$ ]]; then
+        echo "ERROR: Unsupported APPLAUNCH_ARTIFACT_URL: $ARTIFACT_URL"
+        echo "ERROR: Expected https://github.com/<owner>/<repo>/actions/runs/<run_id>/artifacts/<artifact_id>"
+        exit 1
+    fi
+    ARTIFACT_OWNER="${BASH_REMATCH[1]}"
+    ARTIFACT_REPO="${BASH_REMATCH[2]}"
+    ARTIFACT_RUN_ID="${BASH_REMATCH[3]}"
+    ARTIFACT_ID="${BASH_REMATCH[4]}"
+    if [ "$ARTIFACT_OWNER" != "CardputerZero" ] || [ "$ARTIFACT_REPO" != "launcher" ]; then
+        echo "ERROR: APPLAUNCH_ARTIFACT_URL must reference CardputerZero/launcher, got ${ARTIFACT_OWNER}/${ARTIFACT_REPO}"
+        exit 1
+    fi
+
+    ARTIFACT_TOKEN="${APPLAUNCH_ARTIFACT_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+    if [ -z "$ARTIFACT_TOKEN" ]; then
+        echo "ERROR: APPLAUNCH_ARTIFACT_URL requires APPLAUNCH_ARTIFACT_TOKEN, GITHUB_TOKEN, or GH_TOKEN"
+        exit 1
+    fi
+
+    if ! command -v bsdtar >/dev/null 2>&1; then
+        echo "ERROR: bsdtar is required to extract GitHub Actions artifacts (install libarchive-tools)"
+        exit 1
+    fi
+
+    ARTIFACT_WORKDIR=$(mktemp -d)
+    trap 'rm -rf "$ARTIFACT_WORKDIR"' EXIT
+
+    echo "Downloading APPLaunch artifact ${ARTIFACT_ID} from ${ARTIFACT_OWNER}/${ARTIFACT_REPO} run ${ARTIFACT_RUN_ID}"
+    if ! curl -fsSL --retry 3 --retry-all-errors \
+        -H "Authorization: Bearer ${ARTIFACT_TOKEN}" \
+        -o "${ARTIFACT_WORKDIR}/artifact.zip" \
+        "https://api.github.com/repos/${ARTIFACT_OWNER}/${ARTIFACT_REPO}/actions/artifacts/${ARTIFACT_ID}/zip"; then
+        echo "ERROR: Failed to download APPLaunch artifact ${ARTIFACT_ID}."
+        echo "ERROR: Verify the token has Actions: Read on ${ARTIFACT_OWNER}/${ARTIFACT_REPO}, and that the artifact has not expired."
+        exit 1
+    fi
+
+    if ! bsdtar -xf "${ARTIFACT_WORKDIR}/artifact.zip" -C "${ARTIFACT_WORKDIR}"; then
+        echo "ERROR: Failed to extract APPLaunch artifact ${ARTIFACT_ID} (${ARTIFACT_WORKDIR}/artifact.zip)"
+        exit 1
+    fi
+
+    ARTIFACT_DEB="${ARTIFACT_WORKDIR}/applaunch_arm64.deb"
+    if [ ! -f "$ARTIFACT_DEB" ]; then
+        shopt -s nullglob
+        ARTIFACT_DEB_CANDIDATES=("${ARTIFACT_WORKDIR}"/applaunch_*_arm64.deb)
+        shopt -u nullglob
+        if [ "${#ARTIFACT_DEB_CANDIDATES[@]}" -ne 1 ]; then
+            echo "ERROR: APPLaunch artifact ${ARTIFACT_ID} must contain applaunch_arm64.deb or exactly one applaunch_*_arm64.deb (found ${#ARTIFACT_DEB_CANDIDATES[@]})"
+            echo "ERROR: Artifact contents:"
+            ls -la "$ARTIFACT_WORKDIR"
+            exit 1
+        fi
+        ARTIFACT_DEB="${ARTIFACT_DEB_CANDIDATES[0]}"
+    fi
+
+    if [ -f "${ARTIFACT_WORKDIR}/applaunch_arm64.deb.sha256" ]; then
+        if ! (cd "$ARTIFACT_WORKDIR" && sha256sum -c applaunch_arm64.deb.sha256); then
+            echo "ERROR: sha256 verification failed for APPLaunch artifact ${ARTIFACT_ID}"
+            exit 1
+        fi
+    fi
+
+    if [ -f "${ARTIFACT_WORKDIR}/applaunch_arm64.deb.update-info" ]; then
+        echo "APPLaunch artifact update-info:"
+        cat "${ARTIFACT_WORKDIR}/applaunch_arm64.deb.update-info"
+    fi
+
+    DEB_SOURCE_FILE="$ARTIFACT_DEB"
+    echo "Selected APPLaunch artifact package: $DEB_SOURCE_FILE"
+fi
 
 if [ -n "$DEB_SOURCE_FILE" ]; then
     if [ ! -f "$DEB_SOURCE_FILE" ]; then
@@ -19,7 +105,7 @@ if [ -n "$DEB_SOURCE_FILE" ]; then
         exit 1
     fi
     DEB_FILE="${DEB_SOURCE_FILE##*/}"
-    echo "Using local APPLaunch package: $DEB_SOURCE_FILE"
+    echo "Using APPLaunch package: $DEB_SOURCE_FILE"
     install -m 644 "$DEB_SOURCE_FILE" "${ROOTFS_DIR}/tmp/${DEB_FILE}"
 else
     RELEASES_RESPONSE=$(mktemp)
