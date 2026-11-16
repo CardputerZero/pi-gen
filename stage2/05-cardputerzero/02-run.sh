@@ -377,12 +377,7 @@ Storage=persistent
 SystemMaxUse=50M
 EOF
 
-# # Root partition resize fallback on first boot.
-# install -m 755 -d "${ROOTFS_DIR}/usr/lib/cardputerzero"
-# install -m 755 files/resize-root "${ROOTFS_DIR}/usr/lib/cardputerzero/resize-root"
-# install -m 644 files/cardputerzero-resize.service "${ROOTFS_DIR}/etc/systemd/system/cardputerzero-resize.service"
+# First-boot partition/filesystem resize is handled by the initramfs script
+# installed in 05-run.sh.  The old systemd cardputerzero-resize fallback is
+# not installed because parted/partprobe cannot reliably resize a mounted root.
 rm -f "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service"
-
-# on_chroot << 'CHROOT'
-# systemctl enable cardputerzero-resize.service
-# CHROOT

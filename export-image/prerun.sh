@@ -56,6 +56,13 @@ if grep -q "$FEATURE" /etc/mke2fs.conf; then
 fi
 done
 
+# Shipping media is 32GB.  The image root filesystem is about 6.4GB and uses
+# roughly 141k inodes, so 65536 bytes/inode would not fit the build.  32768
+# gives about 210k inodes for the initial filesystem (enough headroom for the
+# build) and about 1M inodes once grown to 32GB on first boot, while keeping
+# the first-boot inode-table initialization about 4x smaller than the default.
+ROOT_INODE_RATIO="${ROOT_INODE_RATIO:-32768}"
+
 if [ "$BOOT_SIZE" -lt 134742016 ]; then
 	FAT_SIZE=16
 else
@@ -63,7 +70,7 @@ else
 fi
 
 mkdosfs -n bootfs -F "$FAT_SIZE" -s 1 -v "$BOOT_DEV" > /dev/null
-mkfs.ext4 -L rootfs -O "$ROOT_FEATURES" "$ROOT_DEV" > /dev/null
+mkfs.ext4 -L rootfs -O "$ROOT_FEATURES" -i "$ROOT_INODE_RATIO" "$ROOT_DEV" > /dev/null
 
 mount -v "$ROOT_DEV" "${ROOTFS_DIR}" -t ext4
 mkdir -p "${ROOTFS_DIR}/boot/firmware"

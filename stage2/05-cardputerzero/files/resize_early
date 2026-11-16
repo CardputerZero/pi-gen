@@ -1,0 +1,115 @@
+#!/bin/sh
+#
+# CardputerZero first-boot resize.
+#
+# This replaces raspberrypi-sys-mods' resize_early script.  The upstream
+# Trixie version only grows the partition and leaves the ext4 resize to
+# systemd-growfs-root.  On CardputerZero the online resize runs while
+# journald/udev/cloud-init are writing to the same SD card, and cheap cards
+# can stall (or hit a kernel/MMC error path) for a very long time.
+#
+# We do both operations here, before the root filesystem is mounted:
+#   1. grow the MBR partition to the end of the card (parted)
+#   2. grow the ext4 filesystem on the raw partition (resize2fs)
+#
+# Failure handling: never leave the boot hanging.  If either step fails or
+# times out, log a warning, write a status file and continue booting with the
+# current (smaller) filesystem.  The "resize" cmdline token is kept, so the
+# next boot retries automatically.
+#
+# Shipping media is 32GB; the image creates ~210k inodes for the initial
+# 6.4GB filesystem (about 141k used) and ~1M inodes once grown to 32GB.
+
+set -e
+
+case "$1" in
+  prereqs)
+    exit 0
+    ;;
+esac
+
+# Only act when the image still asks for a resize.
+if ! grep -q ' resize' /proc/cmdline; then
+  exit 0
+fi
+
+STATUS_FILE=/run/cardputerzero-resize.status
+mkdir -p /run
+: > "$STATUS_FILE" 2>/dev/null || true
+echo "start" >> "$STATUS_FILE" 2>/dev/null || true
+
+get_variables () {
+  local_device_setup "$ROOT" "root file system" || return 1
+  [ -n "$DEV" ] || return 1
+
+  ROOT_PART_NAME="$(lsblk -no kname "$DEV")" || return 1
+  ROOT_DEV_NAME="$(lsblk -no pkname "$DEV")" || return 1
+  [ -n "$ROOT_PART_NAME" ] || return 1
+  [ -n "$ROOT_DEV_NAME" ] || return 1
+  ROOT_DEV="/dev/$ROOT_DEV_NAME"
+
+  ROOT_PART_NUM="$(cat "/sys/block/$ROOT_DEV_NAME/$ROOT_PART_NAME/partition")" || return 1
+  ROOT_DEV_SIZE="$(cat "/sys/block/$ROOT_DEV_NAME/size")" || return 1
+  case "$ROOT_PART_NUM" in ''|*[!0-9]*) return 1 ;; esac
+  case "$ROOT_DEV_SIZE" in ''|*[!0-9]*) return 1 ;; esac
+
+  TARGET_END=$((ROOT_DEV_SIZE - 1))
+  # MBR partitions cannot extend past 2^32-1 sectors.
+  if [ "$TARGET_END" -gt 4294967295 ]; then
+    TARGET_END=4294967295
+  fi
+}
+
+. /scripts/functions
+. /scripts/local
+
+log_begin_msg "CardputerZero: resizing root partition/filesystem..."
+if ! get_variables; then
+  echo "device-not-found" >> "$STATUS_FILE" 2>/dev/null || true
+  log_warning_msg "cannot determine root partition/device; keeping current size"
+  log_end_msg
+  exit 0
+fi
+
+if [ "$ROOT_PART_NUM" -ne 2 ]; then
+  echo "unexpected-partition:$ROOT_PART_NUM" >> "$STATUS_FILE" 2>/dev/null || true
+  log_warning_msg "unexpected partition layout (root is partition $ROOT_PART_NUM, expected 2); skip"
+  log_end_msg
+  exit 0
+fi
+
+# 60 seconds is plenty for a partition table update.  If the card is not
+# responding, do not block the boot forever.
+if ! timeout 60 parted -m "$ROOT_DEV" u s resizepart "$ROOT_PART_NUM" "$TARGET_END"; then
+  echo "parted-failed" >> "$STATUS_FILE" 2>/dev/null || true
+  log_warning_msg "parted resizepart failed; keeping current partition size"
+  log_end_msg
+  exit 0
+fi
+
+# Make sure /dev/mmcblk0p2 (or the equivalent) is updated before resize2fs.
+wait_for_udev 10 || true
+echo "parted-ok" >> "$STATUS_FILE" 2>/dev/null || true
+
+ROOT_PART_DEV="$(resolve_device "$ROOT")"
+if [ -z "$ROOT_PART_DEV" ] || [ ! -b "$ROOT_PART_DEV" ]; then
+  echo "root-device-missing" >> "$STATUS_FILE" 2>/dev/null || true
+  log_warning_msg "cannot resolve root partition device; keeping current filesystem size"
+  log_end_msg
+  exit 0
+fi
+
+# Offline ext4 grow.  resize2fs is idempotent, so the next boot is a no-op.
+# A bogus/slow card can still make this slow; cap it and boot at the current
+# size instead of hanging.
+if ! timeout 300 resize2fs -f -p "$ROOT_PART_DEV"; then
+  echo "resize2fs-failed" >> "$STATUS_FILE" 2>/dev/null || true
+  log_warning_msg "resize2fs failed; keeping current filesystem size"
+  log_end_msg
+  exit 0
+fi
+
+sync
+echo "ok" >> "$STATUS_FILE" 2>/dev/null || true
+log_end_msg
+exit 0

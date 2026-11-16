@@ -29,7 +29,7 @@ ROOT_END=$(fdisk -l "$IMG" 2>/dev/null | grep "Linux" | awk '{print $3}')
 BOOT_SECTORS=$((BOOT_END - BOOT_START + 1))
 ROOT_SECTORS=$((ROOT_END - ROOT_START + 1))
 
-echo "[1/6] Extracting partitions..."
+echo "[1/7] Extracting partitions..."
 dd if="$IMG" of="$TMPDIR/boot.fat" bs=512 skip="$BOOT_START" count="$BOOT_SECTORS" 2>/dev/null
 dd if="$IMG" of="$TMPDIR/root.ext4" bs=512 skip="$ROOT_START" count="$ROOT_SECTORS" 2>/dev/null
 
@@ -38,7 +38,7 @@ mkdir -p "$TMPDIR/boot"
 mount -o loop,ro "$TMPDIR/boot.fat" "$TMPDIR/boot" 2>/dev/null
 
 echo ""
-echo "[2/6] Boot partition (FAT32)"
+echo "[2/7] Boot partition (FAT32)"
 
 for firmware_file in start.elf splash.bmp; do
     if [ -s "$TMPDIR/boot/$firmware_file" ]; then
@@ -47,6 +47,24 @@ for firmware_file in start.elf splash.bmp; do
         fail "$firmware_file MISSING or empty"
     fi
 done
+
+if [ -s "$TMPDIR/boot/initramfs8" ]; then
+    pass "initramfs8 exists ($(stat -c%s "$TMPDIR/boot/initramfs8" 2>/dev/null || stat -f%z "$TMPDIR/boot/initramfs8") bytes)"
+else
+    fail "initramfs8 MISSING or empty"
+fi
+
+if grep -q '^auto_initramfs=1' "$TMPDIR/boot/config.txt" 2>/dev/null; then
+    pass "config.txt: auto_initramfs=1"
+else
+    fail "config.txt: auto_initramfs=1 missing"
+fi
+
+if grep -qw 'resize' "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    pass "cmdline.txt: resize token present"
+else
+    fail "cmdline.txt: resize token missing"
+fi
 
 if grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin([[:space:]]*(#.*)?)?$' \
     "$TMPDIR/boot/config.txt" 2>/dev/null; then
@@ -164,7 +182,83 @@ fi
 umount "$TMPDIR/boot" 2>/dev/null || true
 
 echo ""
-echo "[3/6] Kernel modules (/lib/modules/*/extra/)"
+echo "[3/7] First-boot resize chain"
+
+ROOTFS_MOUNT="$TMPDIR/rootfs"
+mkdir -p "$ROOTFS_MOUNT"
+ROOTFS_MOUNTED=0
+if mount -o loop,ro "$TMPDIR/root.ext4" "$ROOTFS_MOUNT" 2>/dev/null; then
+    ROOTFS_MOUNTED=1
+else
+    fail "root.ext4 could not be mounted for resize checks"
+fi
+
+if [ "$ROOTFS_MOUNTED" = 1 ]; then
+    RESIZE_EARLY="$ROOTFS_MOUNT/usr/share/initramfs-tools/scripts/local-premount/resize_early"
+    RESIZE_HOOK="$ROOTFS_MOUNT/usr/share/initramfs-tools/hooks/cardputerzero-resize"
+
+    if [ -x "$RESIZE_EARLY" ] && grep -q "resize2fs" "$RESIZE_EARLY"; then
+        pass "initramfs resize_early runs resize2fs"
+    else
+        fail "initramfs resize_early missing resize2fs"
+    fi
+
+    if [ -x "$RESIZE_HOOK" ] && grep -q "resize2fs" "$RESIZE_HOOK"; then
+        pass "initramfs hook copies resize2fs"
+    else
+        fail "initramfs resize2fs hook MISSING"
+    fi
+
+    RPI_RESIZE_DROPIN="$ROOTFS_MOUNT/etc/systemd/system/rpi-resize.service.d/10-cardputerzero-no-growfs-fstrim.conf"
+    if [ -f "$RPI_RESIZE_DROPIN" ] &&
+        grep -q '^Wants=first-boot-complete.target$' "$RPI_RESIZE_DROPIN" &&
+        ! grep -Eq 'systemd-growfs-root|fstrim' "$RPI_RESIZE_DROPIN"; then
+        pass "rpi-resize override keeps first-boot-complete but skips growfs/fstrim"
+    else
+        fail "rpi-resize override missing or still pulls growfs/fstrim"
+    fi
+
+    if [ -L "$ROOTFS_MOUNT/etc/systemd/system/sysinit.target.wants/rpi-resize.service" ]; then
+        pass "rpi-resize.service enabled (first-boot-complete chain present)"
+    else
+        fail "rpi-resize.service not enabled; first-boot-complete may never be reached"
+    fi
+
+    FSTRIM_TIMER_TARGET="$(readlink "$ROOTFS_MOUNT/etc/systemd/system/fstrim.timer" 2>/dev/null || true)"
+    if [ "$FSTRIM_TIMER_TARGET" = "/dev/null" ]; then
+        pass "fstrim.timer masked (no first-boot TRIM)"
+    else
+        fail "fstrim.timer not masked"
+    fi
+
+    if [ -L "$ROOTFS_MOUNT/etc/systemd/system/timers.target.wants/fstrim.timer" ]; then
+        fail "fstrim.timer still enabled in timers.target.wants"
+    else
+        pass "fstrim.timer not enabled in timers.target.wants"
+    fi
+
+    umount "$ROOTFS_MOUNT" 2>/dev/null || true
+fi
+
+# 32GB shipping cards: the image should use ~32768 bytes/inode.  This keeps
+# the first-boot inode-table initialization small while leaving enough inodes
+# for the 6.4GB build filesystem and the grown 32GB filesystem.
+INODE_COUNT=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Inode count/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
+BLOCK_COUNT=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Block count/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
+BLOCK_SIZE=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Block size/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
+if [ -n "$INODE_COUNT" ] && [ -n "$BLOCK_COUNT" ] && [ -n "$BLOCK_SIZE" ] && [ "$INODE_COUNT" -gt 0 ]; then
+    INODE_RATIO=$((BLOCK_COUNT * BLOCK_SIZE / INODE_COUNT))
+    if [ "$INODE_RATIO" -ge 30000 ] && [ "$INODE_RATIO" -le 36000 ]; then
+        pass "root filesystem inode ratio ~$INODE_RATIO bytes/inode"
+    else
+        fail "root filesystem inode ratio $INODE_RATIO, expected ~32768"
+    fi
+else
+    fail "could not read root filesystem inode count"
+fi
+
+echo ""
+echo "[4/7] Kernel modules (/lib/modules/*/extra/)"
 
 REQUIRED_MODULES=(
     "bq27xxx_battery.ko"  
@@ -197,7 +291,7 @@ else
 fi
 
 echo ""
-echo "[4/6] APPLaunch"
+echo "[5/7] APPLaunch"
 
 if debugfs -R "stat usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
     pass "APPLaunch binary installed"
@@ -230,7 +324,7 @@ else
 fi
 
 echo ""
-echo "[5/6] Modprobe configuration"
+echo "[6/7] Modprobe configuration"
 
 if debugfs -R "cat etc/modules-load.d/cardputerzero.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "i2c-dev"; then
     pass "modules-load.d: i2c-dev"
@@ -251,7 +345,7 @@ else
 fi
 
 echo ""
-echo "[6/6] Packages"
+echo "[7/7] Packages"
 
 set +e
 debugfs -R "cat var/lib/dpkg/status" "$TMPDIR/root.ext4" > "$TMPDIR/dpkg_status" 2>/dev/null
