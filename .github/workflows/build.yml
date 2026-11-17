@@ -14,7 +14,7 @@ on:
           - Beta
           - Stable
       applaunch_artifact_url:
-        description: '测试模式：launcher Actions artifact 页面 URL（留空=正常 release 构建）'
+        description: '测试模式：launcher Actions artifact 页面 URL（留空=正常 release 构建；填写后仍创建 release 并上传 Actions artifact，但跳过 OSS 上传）'
         required: false
         type: string
 
@@ -270,6 +270,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to Aliyun OSS
+        if: inputs.applaunch_artifact_url == ''
         uses: manyuanrong/setup-ossutil@v3.0
         with:
           endpoint: oss-cn-shenzhen.aliyuncs.com
@@ -277,6 +278,7 @@ jobs:
           access-key-secret: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
       - name: Copy image to OSS
+        if: inputs.applaunch_artifact_url == ''
         run: |
           OSS_URL="https://cardputer-zero-repo.oss-cn-shenzhen.aliyuncs.com/images/${{ steps.image.outputs.name }}"
           ossutil cp -f "${{ steps.image.outputs.path }}" \
