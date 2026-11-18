@@ -1,0 +1,56 @@
+#!/bin/bash
+# /usr/lib/cardputerzero/randomize-disk-id
+#
+# Once per card: replace the MBR disk ID inherited from the image with a fresh
+# random value and keep every PARTUUID reference consistent.  Partition table
+# entries and filesystem sizes are not touched.
+set -euo pipefail
+
+STATE=/var/lib/cardputerzero/diskid-state
+MARKER=/var/lib/cardputerzero/diskid-randomized
+FSTAB=/etc/fstab
+CMDLINE=/boot/firmware/cmdline.txt
+BOOT_CMDLINE=/boot/cmdline.txt
+
+[ -e "$MARKER" ] && exit 0
+
+root_src="$(findmnt -n -o SOURCE / || true)"
+disk_name="$(lsblk -no PKNAME "$root_src" 2>/dev/null || true)"
+disk="/dev/${disk_name}"
+if [ -z "$disk_name" ] || [ ! -b "$disk" ]; then
+    echo "randomize-disk-id: cannot resolve root block device" >&2
+    exit 0
+fi
+
+get_id() { dd if="$disk" bs=1 skip=440 count=4 status=none | od -An -tx4 | tr -d ' \n'; }
+valid_id() { [[ "$1" =~ ^[0-9a-f]{8}$ ]]; }
+
+old_id=""; new_id=""
+if [ -r "$STATE" ]; then
+    read -r old_id new_id < "$STATE" || true
+fi
+if ! valid_id "$old_id" || ! valid_id "$new_id"; then
+    old_id="$(get_id)"
+    valid_id "$old_id" || exit 0
+    new_id="$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
+    valid_id "$new_id" || exit 0
+    [ "$new_id" != "00000000" ] || new_id="00000001"
+    install -d -m 0755 "$(dirname "$STATE")"
+    printf '%s %s\n' "$old_id" "$new_id" > "$STATE"
+    sync
+fi
+
+# Idempotent: a retry after an interrupted run only replaces what is left.
+for f in "$FSTAB" "$CMDLINE" "$BOOT_CMDLINE"; do
+    [ -f "$f" ] || continue
+    sed -i "s/${old_id}/${new_id}/g" "$f"
+done
+sync
+
+# The text id is the little-endian value, so the on-disk bytes are reversed.
+printf "\x${new_id:6:2}\x${new_id:4:2}\x${new_id:2:2}\x${new_id:0:2}" |
+    dd of="$disk" bs=1 seek=440 count=4 conv=notrunc status=none
+sync
+
+: > "$MARKER"
+rm -f "$STATE"

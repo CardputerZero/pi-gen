@@ -61,6 +61,8 @@ jobs:
           KEYBOARD_KEYMAP=us
           KEYBOARD_LAYOUT="English (US)"
           TIMEZONE_DEFAULT=Asia/Shanghai
+          # 14.8 GiB fixed raw image (fits 16 GB cards); see docs/fixed-image-size.md
+          IMAGE_TOTAL_SIZE=15888023552
           CONFIG
           sed -i 's/^          //' config
 

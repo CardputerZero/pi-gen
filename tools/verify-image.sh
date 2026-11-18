@@ -13,6 +13,14 @@ trap "rm -rf $TMPDIR" EXIT
 fail() { echo "  ✗ $1"; ERRORS=$((ERRORS + 1)); }
 pass() { echo "  ✓ $1"; }
 
+IMG_SIZE_BYTES=$(stat -c%s "$IMG" 2>/dev/null || stat -f%z "$IMG")
+MAX_IMG_SIZE="${MAX_IMG_SIZE:-15888023552}"           # 14.8 GiB product cap
+EXPECTED_IMG_SIZE="${EXPECTED_IMG_SIZE:-15888023552}" # 0 = skip exact check
+IS_LITE=0
+case "$(basename "$IMG")" in
+  *-lite*) IS_LITE=1 ;;
+esac
+
 echo "=========================================="
 echo " CardputerZero Image Verification"
 echo "=========================================="
@@ -29,7 +37,39 @@ ROOT_END=$(fdisk -l "$IMG" 2>/dev/null | grep "Linux" | awk '{print $3}')
 BOOT_SECTORS=$((BOOT_END - BOOT_START + 1))
 ROOT_SECTORS=$((ROOT_END - ROOT_START + 1))
 
-echo "[1/7] Extracting partitions..."
+echo "[1/7] Image size and partition layout"
+case "$(basename "$IMG")" in
+  *-lite*)
+    if [ "$IMG_SIZE_BYTES" -le "$MAX_IMG_SIZE" ]; then
+        pass "lite image size $IMG_SIZE_BYTES <= $MAX_IMG_SIZE (auto-sized)"
+    else
+        fail "lite image size $IMG_SIZE_BYTES exceeds $MAX_IMG_SIZE"
+    fi ;;
+  *)
+    if [ "$EXPECTED_IMG_SIZE" = "0" ]; then
+        pass "image size check skipped (EXPECTED_IMG_SIZE=0)"
+    elif [ "$IMG_SIZE_BYTES" -eq "$EXPECTED_IMG_SIZE" ]; then
+        pass "image size fixed at $IMG_SIZE_BYTES bytes (14.8 GiB)"
+    else
+        fail "image size $IMG_SIZE_BYTES != expected $EXPECTED_IMG_SIZE (check IMAGE_TOTAL_SIZE)"
+    fi ;;
+esac
+
+if [ -n "${ROOT_END:-}" ] && [ $((ROOT_END + 1)) -eq $((IMG_SIZE_BYTES / 512)) ]; then
+    pass "root partition ends at the last sector of the image"
+else
+    fail "root partition does not end at the last sector (ROOT_END=${ROOT_END:-unset})"
+fi
+
+DISK_ID=$(dd if="$IMG" bs=1 skip=440 count=4 status=none | xxd -e | cut -f 2 -d' ' || true)
+if [ -n "$DISK_ID" ] && [ "$DISK_ID" != "00000000" ]; then
+    pass "MBR disk ID 0x$DISK_ID"
+else
+    fail "MBR disk ID is empty or zero"
+fi
+
+echo ""
+echo "  Extracting partitions..."
 dd if="$IMG" of="$TMPDIR/boot.fat" bs=512 skip="$BOOT_START" count="$BOOT_SECTORS" 2>/dev/null
 dd if="$IMG" of="$TMPDIR/root.ext4" bs=512 skip="$ROOT_START" count="$ROOT_SECTORS" 2>/dev/null
 
@@ -61,9 +101,9 @@ else
 fi
 
 if grep -qw 'resize' "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
-    pass "cmdline.txt: resize token present"
+    fail "cmdline.txt still contains the resize token"
 else
-    fail "cmdline.txt: resize token missing"
+    pass "cmdline.txt: no resize token"
 fi
 
 if grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin([[:space:]]*(#.*)?)?$' \
@@ -179,10 +219,16 @@ else
     pass "cmdline.txt: console=serial0,115200 removed"
 fi
 
+if grep -q "PARTUUID=${DISK_ID}-02" "$TMPDIR/boot/cmdline.txt" 2>/dev/null; then
+    pass "cmdline.txt: root PARTUUID matches disk ID"
+else
+    fail "cmdline.txt: root PARTUUID does not match disk ID 0x$DISK_ID"
+fi
+
 umount "$TMPDIR/boot" 2>/dev/null || true
 
 echo ""
-echo "[3/7] First-boot resize chain"
+echo "[3/7] No first-boot resize chain"
 
 ROOTFS_MOUNT="$TMPDIR/rootfs"
 mkdir -p "$ROOTFS_MOUNT"
@@ -190,23 +236,21 @@ ROOTFS_MOUNTED=0
 if mount -o loop,ro "$TMPDIR/root.ext4" "$ROOTFS_MOUNT" 2>/dev/null; then
     ROOTFS_MOUNTED=1
 else
-    fail "root.ext4 could not be mounted for resize checks"
+    fail "root.ext4 could not be mounted for first-boot checks"
 fi
 
 if [ "$ROOTFS_MOUNTED" = 1 ]; then
     RESIZE_EARLY="$ROOTFS_MOUNT/usr/share/initramfs-tools/scripts/local-premount/resize_early"
-    RESIZE_HOOK="$ROOTFS_MOUNT/usr/share/initramfs-tools/hooks/cardputerzero-resize"
-
-    if [ -x "$RESIZE_EARLY" ] && grep -q "resize2fs" "$RESIZE_EARLY"; then
-        pass "initramfs resize_early runs resize2fs"
+    if grep -q 'resize2fs' "$RESIZE_EARLY" 2>/dev/null; then
+        fail "initramfs resize_early still grows the filesystem"
     else
-        fail "initramfs resize_early missing resize2fs"
+        pass "no initramfs resize2fs (upstream resize_early is token-gated)"
     fi
 
-    if [ -x "$RESIZE_HOOK" ] && grep -q "resize2fs" "$RESIZE_HOOK"; then
-        pass "initramfs hook copies resize2fs"
+    if [ -e "$ROOTFS_MOUNT/usr/share/initramfs-tools/hooks/cardputerzero-resize" ]; then
+        fail "custom initramfs resize hook still installed"
     else
-        fail "initramfs resize2fs hook MISSING"
+        pass "no custom initramfs resize hook"
     fi
 
     RPI_RESIZE_DROPIN="$ROOTFS_MOUNT/etc/systemd/system/rpi-resize.service.d/10-cardputerzero-no-growfs-fstrim.conf"
@@ -237,12 +281,41 @@ if [ "$ROOTFS_MOUNTED" = 1 ]; then
         pass "fstrim.timer not enabled in timers.target.wants"
     fi
 
+    FSTAB_CONTENT=$(cat "$ROOTFS_MOUNT/etc/fstab" 2>/dev/null || true)
+    if printf '%s' "$FSTAB_CONTENT" | grep -q "PARTUUID=${DISK_ID}-01" &&
+       printf '%s' "$FSTAB_CONTENT" | grep -q "PARTUUID=${DISK_ID}-02"; then
+        pass "fstab: boot/root PARTUUIDs match disk ID"
+    else
+        fail "fstab: PARTUUID does not match disk ID 0x$DISK_ID"
+    fi
+
+    if printf '%s' "$FSTAB_CONTENT" | grep -qE 'ROOTDEV|BOOTDEV'; then
+        fail "fstab still contains ROOTDEV/BOOTDEV placeholders"
+    else
+        pass "fstab: placeholders substituted"
+    fi
+
+    if [ -e "$ROOTFS_MOUNT/usr/lib/cardputerzero/randomize-disk-id" ]; then
+        if [ -L "$ROOTFS_MOUNT/etc/systemd/system/multi-user.target.wants/cardputerzero-diskid.service" ]; then
+            pass "first-boot per-card disk-ID randomization enabled (B1)"
+        else
+            fail "B1 script present but service not enabled"
+        fi
+        if [ -e "$ROOTFS_MOUNT/var/lib/cardputerzero/diskid-randomized" ]; then
+            fail "stale disk-ID marker present in image"
+        else
+            pass "no stale disk-ID marker"
+        fi
+    else
+        pass "first-boot disk-ID randomization disabled (RANDOMIZE_DISK_ID_ON_FIRST_BOOT=0)"
+    fi
+
     umount "$ROOTFS_MOUNT" 2>/dev/null || true
 fi
 
-# 32GB shipping cards: the image should use ~32768 bytes/inode.  This keeps
-# the first-boot inode-table initialization small while leaving enough inodes
-# for the 6.4GB build filesystem and the grown 32GB filesystem.
+# Fixed 14.8 GiB image: ext4 is created with -i 32768, giving ~469k inodes
+# (~32700 bytes/inode) for a rootfs that uses ~141k inodes.  This keeps the
+# inode table small and leaves ample inode headroom at a fixed image size.
 INODE_COUNT=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Inode count/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
 BLOCK_COUNT=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Block count/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
 BLOCK_SIZE=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Block size/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
@@ -251,10 +324,22 @@ if [ -n "$INODE_COUNT" ] && [ -n "$BLOCK_COUNT" ] && [ -n "$BLOCK_SIZE" ] && [ "
     if [ "$INODE_RATIO" -ge 30000 ] && [ "$INODE_RATIO" -le 36000 ]; then
         pass "root filesystem inode ratio ~$INODE_RATIO bytes/inode"
     else
-        fail "root filesystem inode ratio $INODE_RATIO, expected ~32768"
+        fail "root filesystem inode ratio $INODE_RATIO, expected ~32700"
     fi
 else
     fail "could not read root filesystem inode count"
+fi
+
+FREE_BLOCKS=$(LC_ALL=C dumpe2fs -h "$TMPDIR/root.ext4" 2>/dev/null | awk -F: '/Free blocks/{gsub(/[^0-9]/, "", $2); print $2; exit}' || true)
+if [ "$IS_LITE" = "1" ]; then
+    # Lite images are auto-sized to their contents; the 1 GiB product guard
+    # only applies to the fixed-size desktop image.
+    pass "lite image: free-space check skipped (auto-sized)"
+elif [ -n "${FREE_BLOCKS:-}" ] && [ -n "${BLOCK_SIZE:-}" ] && [ "$FREE_BLOCKS" -gt 0 ] &&
+   [ "$((FREE_BLOCKS * BLOCK_SIZE))" -ge $((1024 * 1024 * 1024)) ]; then
+    pass "root filesystem free space >= 1 GiB ($((FREE_BLOCKS * BLOCK_SIZE / 1024 / 1024)) MiB)"
+else
+    fail "root filesystem free space below 1 GiB"
 fi
 
 echo ""

@@ -200,6 +200,21 @@ if [ -z "${DEPLOY_COMPRESSION}" ] && [ "${DEPLOY_ZIP:-1}" = "0" ]; then
 fi
 export DEPLOY_COMPRESSION=${DEPLOY_COMPRESSION:-zip}
 export COMPRESSION_LEVEL=${COMPRESSION_LEVEL:-6}
+
+# CardputerZero ships a fixed-size raw image.  When IMAGE_TOTAL_SIZE is set
+# (bytes), export-image/prerun.sh sizes the image to exactly this value and
+# aborts the build if the rootfs no longer fits; empty keeps upstream's
+# "size to the rootfs contents" behaviour (used by the lite check build).
+export IMAGE_TOTAL_SIZE="${IMAGE_TOTAL_SIZE:-}"
+
+# Bytes per inode for the root filesystem.  32768 yields ~469k inodes on the
+# fixed 14.8 GiB image; the current rootfs uses ~141k.
+export ROOT_INODE_RATIO="${ROOT_INODE_RATIO:-32768}"
+
+# Give every card its own MBR disk ID on first boot (B1).  Set to 0 to keep
+# the build-time ID shared by all copies of the image.
+export RANDOMIZE_DISK_ID_ON_FIRST_BOOT="${RANDOMIZE_DISK_ID_ON_FIRST_BOOT:-1}"
+
 export LOG_FILE="${WORK_DIR}/build.log"
 
 export TARGET_HOSTNAME=${TARGET_HOSTNAME:-raspberrypi}

@@ -61,6 +61,26 @@ The following environment variables are supported:
    variable to set the root name of your OS, eg `IMG_NAME=Frobulator`.
    Export files in stages may add suffixes to `IMG_NAME`.
 
+ * `IMAGE_TOTAL_SIZE` (Default: unset)
+
+   Fixed raw image size in bytes. When set, `export-image/prerun.sh` creates an
+   image of exactly this size and aborts the build if the rootfs plus
+   `ROOT_MIN_FREE` (default 2 GiB) no longer fits. Unset keeps upstream
+   behaviour (size the image to the rootfs contents). CardputerZero release
+   builds set `15888023552` (14.8 GiB, fits 16 GB cards).
+
+ * `ROOT_INODE_RATIO` (Default: `32768`)
+
+   Bytes per inode passed to `mkfs.ext4 -i`. 32768 yields ~469k inodes on the
+   fixed 14.8 GiB root filesystem (the rootfs currently uses ~141k).
+
+ * `RANDOMIZE_DISK_ID_ON_FIRST_BOOT` (Default: `1`)
+
+   When set to `1`, a one-shot first-boot service gives each flashed card its
+   own MBR disk ID and rewrites the PARTUUID references in `/etc/fstab` and
+   `cmdline.txt`. Set to `0` to keep the build-time disk ID shared by all
+   copies of the image. This never changes partition sizes or filesystem size.
+
  * `PI_GEN_RELEASE` (Default: `Raspberry Pi reference`)
 
    The release name to use in `/etc/issue.txt`. The default should only be used

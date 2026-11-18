@@ -377,7 +377,8 @@ Storage=persistent
 SystemMaxUse=50M
 EOF
 
-# First-boot partition/filesystem resize is handled by the initramfs script
-# installed in 05-run.sh.  The old systemd cardputerzero-resize fallback is
-# not installed because parted/partprobe cannot reliably resize a mounted root.
+# Root partition/filesystem expansion is intentionally not supported: the
+# image is built at its final size (IMAGE_TOTAL_SIZE) and neither cmdline.txt
+# nor the initramfs contains a first-boot resize path.  See
+# docs/fixed-image-size.md.
 rm -f "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/adbd.service"

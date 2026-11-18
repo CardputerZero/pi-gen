@@ -1,0 +1,12 @@
+[Unit]
+Description=Give this card its own MBR disk ID (once)
+ConditionPathExists=!/var/lib/cardputerzero/diskid-randomized
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/cardputerzero/randomize-disk-id
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

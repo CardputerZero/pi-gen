@@ -1,33 +1,20 @@
 #!/bin/bash -e
 #
-# CardputerZero first-boot resizing (32GB shipping cards).
+# CardputerZero images are fixed-size: the root partition and filesystem are
+# created at build time (IMAGE_TOTAL_SIZE) and are never grown on the device.
+# cmdline.txt has no "resize" token, so raspberrypi-sys-mods' resize_early and
+# set_partuuid both exit early, and no custom initramfs resize code is
+# installed anymore.
 #
-# The initramfs script grows the partition and the ext4 filesystem before the
-# root filesystem is mounted.  This is deliberately not left to
-# systemd-growfs-root: on Trixie that runs an online resize at sysinit, while
-# journald/udev/cloud-init are already doing I/O on the same SD card.  On
-# low-end cards that first boot can stall or hit MMC/kernel error paths.
-#
-# We also disable the first-boot fstrim that raspberrypi-sys-mods pulls in via
-# rpi-resize and that fstrim.timer would otherwise trigger (the image has no
-# timer stamp).  A full-card TRIM is the other big first-boot I/O burst and is
-# not required for a working SD-card image; users can still run fstrim.service
-# manually.
+# Keep rpi-resize enabled: it is the unit that pulls first-boot-complete.target,
+# which other first-boot units order themselves against.  Masking rpi-resize
+# would remove that ordering.  Instead, override its Wants so it only pulls
+# first-boot-complete and no longer starts systemd-growfs-root.service (which
+# would attempt an online resize) or fstrim.service (a full-card TRIM burst on
+# the first boot, because the image ships no fstrim timer stamp).
 
-install -d "${ROOTFS_DIR}/usr/share/initramfs-tools/scripts/local-premount"
-install -d "${ROOTFS_DIR}/usr/share/initramfs-tools/hooks"
 install -d "${ROOTFS_DIR}/etc/systemd/system"
 
-install -m 0755 files/resize_early \
-    "${ROOTFS_DIR}/usr/share/initramfs-tools/scripts/local-premount/resize_early"
-install -m 0755 files/cardputerzero-resize-hook \
-    "${ROOTFS_DIR}/usr/share/initramfs-tools/hooks/cardputerzero-resize"
-
-# Keep rpi-resize enabled: it is the unit that pulls
-# first-boot-complete.target, which other first-boot units order themselves
-# against.  Masking rpi-resize would remove that ordering.  Instead, override
-# its Wants so it only pulls first-boot-complete and no longer starts
-# systemd-growfs-root.service or fstrim.service.
 install -d "${ROOTFS_DIR}/etc/systemd/system/rpi-resize.service.d"
 cat > "${ROOTFS_DIR}/etc/systemd/system/rpi-resize.service.d/10-cardputerzero-no-growfs-fstrim.conf" << 'EOF'
 [Unit]
@@ -42,3 +29,20 @@ EOF
 rm -f "${ROOTFS_DIR}/etc/systemd/system/timers.target.wants/fstrim.timer"
 ln -sfn /dev/null "${ROOTFS_DIR}/etc/systemd/system/fstrim.timer"
 rm -f "${ROOTFS_DIR}/var/lib/systemd/deb-systemd-helper-enabled/timers.target.wants/fstrim.timer"
+
+# Give every card its own MBR disk ID on first boot (B1).  The build already
+# writes a random ID into the image, but every copy of that image would share
+# it; this one-shot service randomizes it per card and keeps the PARTUUID
+# references in fstab/cmdline in sync.  It never touches partitions or the
+# filesystem size.
+if [ "${RANDOMIZE_DISK_ID_ON_FIRST_BOOT:-1}" = "1" ]; then
+    install -d "${ROOTFS_DIR}/usr/lib/cardputerzero"
+    install -m 0755 files/randomize-disk-id \
+        "${ROOTFS_DIR}/usr/lib/cardputerzero/randomize-disk-id"
+    install -d "${ROOTFS_DIR}/usr/lib/systemd/system"
+    install -m 0644 files/cardputerzero-diskid.service \
+        "${ROOTFS_DIR}/usr/lib/systemd/system/cardputerzero-diskid.service"
+    install -d "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants"
+    ln -sf /usr/lib/systemd/system/cardputerzero-diskid.service \
+        "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/cardputerzero-diskid.service"
+fi
