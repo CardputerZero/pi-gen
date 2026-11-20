@@ -1,0 +1,13 @@
+[Unit]
+Description=CardputerZero text boot splash
+After=lcd-console.service
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/cz-splash
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

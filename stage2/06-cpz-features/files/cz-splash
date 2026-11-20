@@ -1,0 +1,46 @@
+#!/bin/bash
+# cz-splash — image boot splash on the CardputerZero LCD, shown before login.
+# Switches tty1 to graphics mode (so fbcon can't redraw over the image), writes a
+# pre-rendered 320x170 RGB565 image to the framebuffer, plays a ping once sound is
+# ready, holds until the system is ready for login, then restores text mode for getty.
+FB=${CZ_SPLASH_FB:-/dev/fb0}
+IMG=${CZ_SPLASH_IMG:-/usr/share/cz/cz-splash.rgb565}
+PING=${CZ_SPLASH_PING:-/usr/share/cz/cz-ping.wav}
+CZ_FONT=${CZ_FONT:-/usr/share/consolefonts/Lat15-Terminus12x6.psf.gz}
+MIN_SHOW=${CZ_SPLASH_MIN:-3}
+MAX_WAIT=${CZ_SPLASH_MAX:-25}
+
+# KDSETMODE: graphics stops fbcon rendering (image stays); text restores it for getty.
+vtmode() {
+  python3 -c 'import os,fcntl,sys
+fd=os.open("/dev/tty1",os.O_RDWR)
+fcntl.ioctl(fd,0x4B3A,1 if sys.argv[1]=="g" else 0)
+os.close(fd)' "$1" 2>/dev/null
+}
+trap 'vtmode t; setfont -C /dev/tty1 "$CZ_FONT" 2>/dev/null' EXIT
+
+start=$(date +%s)
+vtmode g
+cat "$IMG" > "$FB" 2>/dev/null
+
+# Ping after sound.target (alsa-restore has set volumes); image is already up.
+for _ in $(seq 1 50); do
+  systemctl is-active --quiet sound.target && break
+  sleep 0.1
+done
+# Make sure the output path is enabled and at an audible level before playing.
+amixer -c ES8389Audio sset Speaker on >/dev/null 2>&1
+amixer -c ES8389Audio sset DACL 80% >/dev/null 2>&1
+amixer -c ES8389Audio sset DACR 80% >/dev/null 2>&1
+aplay -q "$PING" 2>/dev/null
+logger -t cz-splash "ping rc=$? pcm=$( [ -e /dev/snd/pcmC0D0p ] && echo present || echo missing )"
+
+# Hold until logins are permitted, but at least MIN_SHOW and at most MAX_WAIT.
+while :; do
+  now=$(date +%s); el=$((now - start))
+  [ "$el" -ge "$MAX_WAIT" ] && break
+  if [ "$el" -ge "$MIN_SHOW" ] && systemctl is-active --quiet systemd-user-sessions.service; then
+    break
+  fi
+  sleep 0.2
+done

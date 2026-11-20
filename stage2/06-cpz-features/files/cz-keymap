@@ -1,0 +1,8 @@
+#!/bin/bash
+# Overlay the vendor Sym-layer keymap on top of the base console keymap.
+MAP=/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map
+[ -r "$MAP" ] || exit 0
+for t in 1 2 3 4 5 6; do
+    loadkeys -q -C "/dev/tty$t" "$MAP" 2>/dev/null || true
+done
+exit 0

@@ -1,0 +1,178 @@
+#!/bin/bash
+# cz-menu — text-mode control panel for CardputerZero
+BL=/sys/class/backlight/backlight
+CARD=ES8389Audio
+export JACK_NO_START_SERVER=1
+
+have()  { command -v "$1" >/dev/null 2>&1; }
+pause() { printf '\npress any key'; read -r -n1 -s _; }
+bl()    { cat "$BL/brightness" 2>/dev/null || echo 0; }
+blm()   { cat "$BL/max_brightness" 2>/dev/null || echo 100; }
+blstep() { local cur max step new
+    cur=$(bl); max=$(blm); step=$(( max / 10 )); [ "$step" -lt 1 ] && step=1
+    if [ "$1" = "+" ]; then new=$(( cur + step )); else new=$(( cur - step )); fi
+    [ "$new" -lt 0 ] && new=0; [ "$new" -gt "$max" ] && new=$max
+    echo "$new" > "$BL/brightness" 2>/dev/null; }
+
+vctl() { local names
+    names=$(amixer -c "$CARD" scontrols 2>/dev/null \
+            | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p")
+    printf '%s\n' "$names" | grep -m1 -E '^DAC[LR]$' || printf '%s\n' "$names" | head -1; }
+VC=$(vctl)
+vol() { if [ -n "$VC" ]; then
+            amixer -c "$CARD" sget "$VC" 2>/dev/null | grep -o '[0-9]*%' | head -1
+        else printf '?'; fi; }
+volstep() { [ -n "$VC" ] && { amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1
+                              amixer -c "$CARD" sset DACR "$1" unmute >/dev/null 2>&1; }; }
+
+bat() { for p in /sys/class/power_supply/*; do
+          [ -r "$p/capacity" ] && { printf '%s%%' "$(cat "$p/capacity")"; return; }
+        done; printf '?'; }
+temp() { if have vcgencmd; then
+             vcgencmd measure_temp 2>/dev/null | sed -e "s/^temp=//" -e "s/'C\$/°C/"
+         else awk '{printf "%.1f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null; fi; }
+
+ir_dev() {
+    for d in /dev/lirc*; do
+        [ -e "$d" ] || continue
+        ir-ctl -d "$d" --features 2>/dev/null \
+          | grep -q "Device can $1 raw IR" && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+hdr() { clear; printf '== %s ==\n' "$1"
+        local mode="${2:-main}" mid third
+        case "$mode" in
+          audio)  mid="Vol: $(vol)" ;;
+          system) mid="BL: $(bl)/$(blm)" ;;
+          *)      mid="Date: $(date +%Y-%m-%d)" ;;
+        esac
+        if [ "$mode" = system ]; then third="Temp: $(temp)"; else third="Time: $(date +%H:%M)"; fi
+        printf 'Battery: %s  %s  %s\n' "$(bat)" "$mid" "$third"; }
+
+menu() {
+    local title="$1" mode="${2:-main}"; shift 2
+    local -a labels=() cmds=()
+    while [ $# -gt 0 ]; do
+        labels+=("$1"); cmds+=("$2"); shift 2
+    done
+    while :; do
+        hdr "$title" "$mode"
+        local i
+        for i in "${!labels[@]}"; do
+            printf ' %d %s\n' "$((i+1))" "${labels[i]}"
+        done
+        echo ' 0 Back'
+        read -r -n1 -s k
+        [ "$k" = 0 ] && return
+        if [[ "$k" =~ ^[1-9]$ ]] && [ "$k" -le "${#cmds[@]}" ]; then
+            local cmd="${cmds[$((k-1))]}"
+            clear
+            if [ "${cmd#!}" != "$cmd" ]; then
+                eval "${cmd#!}"
+            else
+                eval "$cmd"; pause
+            fi
+        fi
+    done
+}
+
+sysinfo() {
+    uname -srmo; echo; uptime; echo; free -h; echo
+    df -h / /boot/firmware 2>/dev/null; echo
+    have vcgencmd && vcgencmd measure_temp
+    echo; systemctl is-active lcd-console cz-keymap 2>/dev/null
+}
+
+
+m_audio() {
+    menu AUDIO audio \
+      "Volume +5%"    'volstep 5%+' \
+      "Volume -5%"    'volstep 5%-' \
+      "Mute toggle"   'amixer -c "$CARD" sset Speaker toggle' \
+      "Speaker test"  'speaker-test -D default -c 2 -t sine -l 1' \
+      "All controls"  'amixer -c "$CARD" scontrols' \
+      "Save levels"   'sudo alsactl store; echo saved'
+}
+
+m_net() {
+    menu WIFI main \
+      "Radio on/off"    'cz-wifi radio' \
+      "Scan and join"   'cz-wifi scan' \
+      "Hidden network"  'cz-wifi hidden' \
+      "Network"         'ip -brief addr; ip route'
+}
+
+m_ir() {
+    menu IR main \
+      "Devices"        'ir-keytable 2>/dev/null | head -20' \
+      "Receive 5s"     'd=$(ir_dev receive) && sudo timeout 5 ir-ctl -r -d "$d"' \
+      "Record button"  'printf "name: "; read -r n; cz-ir rec "$n" 5' \
+      "Replay button"  'cz-ir list; printf "name: "; read -r n; cz-ir send "$n"' \
+      "Saved buttons"  'cz-ir list' \
+      "All protocols"  'sudo ir-keytable -p all'
+}
+
+m_system() {
+    menu SYSTEM system \
+      "Audio"         '!m_audio' \
+      "Display"       '!m_display'
+}
+
+m_display() {
+    menu DISPLAY system \
+      "Backlight +"   '!blstep +' \
+      "Backlight -"   '!blstep -'
+}
+
+m_power() {
+    menu POWER main \
+      "Battery detail" 'for p in /sys/class/power_supply/*; do echo "== $p"; for f in capacity status voltage_now current_now temp health; do [ -r "$p/$f" ] && printf "  %-14s %s\n" "$f" "$(cat "$p/$f")"; done; done' \
+      "CPU / thermal"  'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null; vcgencmd measure_temp 2>/dev/null; vcgencmd get_throttled 2>/dev/null' \
+      "Uptime / load"  'uptime; cat /proc/loadavg' \
+      "Reboot"         '!ask "Reboot the device?" && sudo reboot'
+}
+
+# Plain yes/no confirmation (same semantics as cz-menu-theme). ask <q> -> 0 only on y/Y.
+ask() {
+    printf '%s [Y/N] ' "$1"
+    read -r -n1 c
+    echo
+    case "$c" in y|Y) return 0 ;; *) return 1 ;; esac
+}
+
+do_logout() {
+    ask "Logout of CardputerZero?" || return
+    clear
+    [ -n "${XDG_SESSION_ID:-}" ] && loginctl terminate-session "$XDG_SESSION_ID" 2>/dev/null
+    exit 0
+}
+
+need() {
+    command -v "$1" >/dev/null 2>&1 && return 0
+    printf '%s not installed.\npress any key' "$1"
+    read -r -n1 -s _
+    return 1
+}
+
+while :; do
+    hdr "CARDPUTER ZERO" main
+    echo ' 1 Camera      5 IR'
+    echo ' 2 Music       6 System'
+    echo ' 3 News        7 Power'
+    echo ' 4 WiFi        8 Logout'
+    echo ' 0 CLI'
+    read -r -n1 -s k
+    case "$k" in
+      1) need camera_app && cz-camera ;;
+      2) need cmus && cmus ;;
+      3) need newsboat && cz-news ;;
+      4) m_net ;;
+      5) m_ir ;;
+      6) m_system ;;
+      7) m_power ;;
+      8) do_logout ;;
+      0) clear; tmux -f /etc/cz-tmux.conf new-session -A -s main ;;
+    esac
+done

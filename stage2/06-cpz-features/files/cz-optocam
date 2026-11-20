@@ -1,0 +1,342 @@
+#!/usr/bin/python3
+"""cz-optocam — a simple graphical camera for the CardputerZero.
+
+Live preview from the imx219 (picamera2/libcamera) rendered to the 320x170
+RGB565 framebuffer, with a keypad shutter, flip/mirror and a basic gallery.
+Original code; approach inspired by PiSugar whisplay-optocamzero (not copied).
+"""
+import os
+import sys
+import time
+import glob
+import mmap
+import struct
+import fcntl
+import select
+import signal
+import termios
+import subprocess
+from datetime import datetime
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from picamera2 import Picamera2
+from evdev import InputDevice, ecodes
+
+FB = "/dev/fb0"
+W, H = 320, 170
+SAVE_DIR = os.path.expanduser("~/Pictures")
+KEYPAD = "/dev/input/by-path/platform-3f804000.i2c-event"
+PREVIEW_SIZE = (320, 240)     # 4:3 lores stream, center-cropped to H
+STILL_SIZE = (1640, 1232)     # 2 MP stills
+
+# Keycodes (tca8418 base layer)
+K_ENTER, K_SPACE, K_ESC = 28, 57, 1
+K_F, K_G, K_TAB = 33, 34, 15
+K_LEFT, K_RIGHT, K_UP, K_DOWN = 105, 106, 103, 108
+K_O, K_P, K_X, K_BKSP = 24, 25, 45, 14
+
+_running = True
+
+
+def log(msg):
+    sys.stderr.write("[cz-optocam] %s\n" % msg)
+    sys.stderr.flush()
+
+
+def current_vt():
+    try:
+        n = subprocess.check_output(["fgconsole"], stderr=subprocess.DEVNULL).decode().strip()
+        return "/dev/tty" + (n or "1")
+    except Exception:
+        return "/dev/tty1"
+
+
+def vt_graphics(on):
+    try:
+        fd = os.open(current_vt(), os.O_RDWR)
+        if not on:
+            termios.tcflush(fd, termios.TCIFLUSH)
+        fcntl.ioctl(fd, 0x4B3A, 1 if on else 0)   # KDSETMODE
+        os.close(fd)
+    except Exception as e:
+        log("vt mode: %s" % e)
+
+
+def fb_params():
+    fd = os.open(FB, os.O_RDWR)
+    v = fcntl.ioctl(fd, 0x4600, bytearray(160))   # FBIOGET_VSCREENINFO
+    f = fcntl.ioctl(fd, 0x4602, bytearray(80))    # FBIOGET_FSCREENINFO
+    os.close(fd)
+    u = struct.unpack("=20I", v[:80])
+    xres, yres, bpp = u[0], u[1], u[6]
+    red_off, red_len = u[8], u[9]
+    grn_off, grn_len = u[11], u[12]
+    blu_off, blu_len = u[14], u[15]
+    line_len = struct.unpack_from("=I", f, 48)[0]
+    return xres, yres, bpp, (red_off, red_len, grn_off, grn_len, blu_off, blu_len), line_len
+
+
+class Screen:
+    def __init__(self):
+        xres, yres, bpp, bits, self.line_len = fb_params()
+        log("fb %dx%d %dbpp bits=%s line_len=%d" % (xres, yres, bpp, bits, self.line_len))
+        self.fd = os.open(FB, os.O_RDWR)
+        self.mm = mmap.mmap(self.fd, self.line_len * yres, mmap.MAP_SHARED,
+                            mmap.PROT_WRITE | mmap.PROT_READ)
+        self.rgb565 = (bits == (11, 5, 5, 6, 0, 5))
+
+    def blit(self, img):
+        # img: PIL RGB W x H
+        a = np.asarray(img, dtype=np.uint16)
+        px = ((a[..., 0] & 0xF8) << 8) | ((a[..., 1] & 0xFC) << 3) | (a[..., 2] >> 3)
+        raw = px.astype("<u2").tobytes()
+        if self.line_len == W * 2:
+            self.mm.seek(0)
+            self.mm.write(raw)
+        else:
+            for y in range(H):
+                self.mm.seek(y * self.line_len)
+                self.mm.write(raw[y * W * 2:(y + 1) * W * 2])
+
+    def close(self):
+        try:
+            self.mm.close()
+            os.close(self.fd)
+        except Exception:
+            pass
+
+
+def get_font(size):
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    try:
+        return ImageFont.load_default(size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+class Camera:
+    def __init__(self):
+        self.picam2 = Picamera2()
+        cfg = self.picam2.create_preview_configuration(
+            main={"size": STILL_SIZE, "format": "RGB888"},
+            lores={"size": PREVIEW_SIZE, "format": "RGB888"})
+        self.picam2.configure(cfg)
+        self.picam2.start()
+        self.hflip = 0
+        self.vflip = 0
+
+    def preview(self):
+        arr = self.picam2.capture_array("lores")     # (240,320,3)
+        top = (arr.shape[0] - H) // 2
+        arr = arr[top:top + H, :W, :]
+        return Image.fromarray(arr)
+
+    def capture(self, path):
+        arr = self.picam2.capture_array("main")
+        Image.fromarray(arr).save(path, "JPEG", quality=92)
+
+    def cycle_flip(self):
+        # off -> h -> v -> hv -> off
+        state = (self.hflip, self.vflip)
+        nxt = {(0, 0): (1, 0), (1, 0): (0, 1), (0, 1): (1, 1), (1, 1): (0, 0)}[state]
+        self.hflip, self.vflip = nxt
+        self.picam2.set_controls({"HFlip": self.hflip, "VFlip": self.vflip})
+        return {(0, 0): "flip:off", (1, 0): "flip:H", (0, 1): "flip:V",
+                (1, 1): "flip:HV"}[nxt]
+
+    def close(self):
+        try:
+            self.picam2.stop()
+            self.picam2.close()
+        except Exception:
+            pass
+
+
+def draw_text(d, xy, text, font, fill=(255, 255, 255)):
+    x, y = xy
+    for ox in (-1, 0, 1):
+        for oy in (-1, 0, 1):
+            if ox or oy:
+                d.text((x + ox, y + oy), text, font=font, fill=(0, 0, 0))
+    d.text((x, y), text, font=font, fill=fill)
+
+
+def list_photos():
+    files = sorted(glob.glob(os.path.join(SAVE_DIR, "czcam_*.jpg")))
+    return files
+
+
+class App:
+    def __init__(self):
+        self.screen = Screen()
+        self.cam = Camera()
+        self.dev = InputDevice(KEYPAD)
+        self.font = get_font(14)
+        self.font_s = get_font(11)
+        self.mode = "preview"          # preview | gallery
+        self.gallery = []
+        self.gindex = 0
+        self.confirm_delete = False
+        self.toast = None
+        self.toast_until = 0
+        os.makedirs(SAVE_DIR, exist_ok=True)
+
+    def say(self, msg, secs=1.2):
+        self.toast = msg
+        self.toast_until = time.time() + secs
+
+    def shutter(self):
+        name = "czcam_%s.jpg" % datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(SAVE_DIR, name)
+        try:
+            self.cam.capture(path)
+            self.say("SAVED " + name)
+            log("saved %s" % path)
+        except Exception as e:
+            self.say("capture failed")
+            log("capture error: %s" % e)
+
+    def open_gallery(self):
+        self.gallery = list_photos()
+        if not self.gallery:
+            self.say("no photos yet")
+            return
+        self.gindex = len(self.gallery) - 1
+        self.mode = "gallery"
+        self.confirm_delete = False
+
+    def delete_current(self):
+        if not self.gallery:
+            return
+        if not self.confirm_delete:
+            self.confirm_delete = True
+            self.say("X again to delete")
+            return
+        path = self.gallery[self.gindex]
+        try:
+            os.remove(path)
+            log("deleted %s" % path)
+        except Exception as e:
+            log("delete error: %s" % e)
+        self.confirm_delete = False
+        self.gallery = list_photos()
+        if not self.gallery:
+            self.mode = "preview"
+        else:
+            self.gindex = min(self.gindex, len(self.gallery) - 1)
+
+    def handle_key(self, code):
+        if self.mode == "preview":
+            if code in (K_ENTER, K_SPACE):
+                self.shutter()
+            elif code == K_F:
+                self.say(self.cam.cycle_flip())
+            elif code in (K_G, K_TAB):
+                self.open_gallery()
+            elif code == K_ESC:
+                global _running
+                _running = False
+        else:  # gallery
+            if code in (K_LEFT, K_O):
+                self.gindex = (self.gindex - 1) % len(self.gallery)
+                self.confirm_delete = False
+            elif code in (K_RIGHT, K_P):
+                self.gindex = (self.gindex + 1) % len(self.gallery)
+                self.confirm_delete = False
+            elif code in (K_X, K_BKSP):
+                self.delete_current()
+            elif code in (K_ESC, K_G, K_TAB, K_ENTER):
+                self.mode = "preview"
+                self.confirm_delete = False
+
+    def render_preview(self):
+        img = self.cam.preview()
+        d = ImageDraw.Draw(img)
+        n = len(list_photos())
+        draw_text(d, (4, 2), "%dx%d" % STILL_SIZE, self.font_s)
+        draw_text(d, (W - 60, 2), "%d pics" % n, self.font_s)
+        draw_text(d, (4, H - 16), "ENTER shot  F flip  G gallery  ESC quit", self.font_s)
+        if self.toast and time.time() < self.toast_until:
+            draw_text(d, (4, H - 32), self.toast, self.font, fill=(120, 255, 120))
+        self.screen.blit(img)
+
+    def render_gallery(self):
+        path = self.gallery[self.gindex]
+        try:
+            im = Image.open(path).convert("RGB")
+            im.thumbnail((W, H))
+            img = Image.new("RGB", (W, H), (0, 0, 0))
+            img.paste(im, ((W - im.width) // 2, (H - im.height) // 2))
+        except Exception:
+            img = Image.new("RGB", (W, H), (40, 0, 0))
+        d = ImageDraw.Draw(img)
+        draw_text(d, (4, 2), "%d/%d" % (self.gindex + 1, len(self.gallery)), self.font_s)
+        draw_text(d, (4, H - 16), "< > browse  X delete  ESC back", self.font_s)
+        if self.confirm_delete:
+            draw_text(d, (W // 2 - 60, H // 2), "DELETE? X again", self.font, fill=(255, 80, 80))
+        if self.toast and time.time() < self.toast_until:
+            draw_text(d, (4, H - 32), self.toast, self.font, fill=(120, 255, 120))
+        self.screen.blit(img)
+
+    def run(self):
+        self.dev.grab()
+        try:
+            while _running:
+                r, _, _ = select.select([self.dev.fd], [], [], 0)
+                if r:
+                    for ev in self.dev.read():
+                        if ev.type == ecodes.EV_KEY and ev.value == 1:
+                            self.handle_key(ev.code)
+                if not _running:
+                    break
+                if self.mode == "preview":
+                    self.render_preview()
+                else:
+                    self.render_gallery()
+        finally:
+            try:
+                self.dev.ungrab()
+            except Exception:
+                pass
+
+    def close(self):
+        self.cam.close()
+        self.screen.close()
+
+
+def main():
+    if os.environ.get("TMUX"):
+        print("Leave tmux first (cz-menu -> 0, then 'exit'), then run: cz-optocam")
+        return 1
+    if not os.path.exists(KEYPAD):
+        print("keypad not found: %s" % KEYPAD)
+        return 1
+    app = None
+    vt_graphics(True)
+    try:
+        app = App()
+        app.run()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        log("fatal: %s" % e)
+        raise
+    finally:
+        if app:
+            app.close()
+        vt_graphics(False)
+        sys.stdout.write("\033c")
+        sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+    sys.exit(main())

@@ -1,0 +1,34 @@
+#!/bin/bash
+# cz-ir — record / replay IR buttons
+DIR="$HOME/.config/cz-ir"; mkdir -p "$DIR"
+
+ir_dev() {
+    for d in /dev/lirc*; do
+        [ -e "$d" ] || continue
+        ir-ctl -d "$d" --features 2>/dev/null \
+          | grep -q "Device can $1 raw IR" && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+case "${1:-}" in
+  rec)
+    name="${2:?usage: cz-ir rec <name> [secs]}"; secs="${3:-5}"
+    RX=$(ir_dev receive) || { echo "no IR receiver"; exit 1; }
+    echo "recording ${secs}s on $RX - press the button NOW"
+    sudo timeout "$secs" ir-ctl -r -d "$RX" > "$DIR/$name.ir"
+    if [ -s "$DIR/$name.ir" ]; then
+        echo "saved $name ($(wc -l < "$DIR/$name.ir") lines)"
+    else
+        echo "nothing captured"; rm -f "$DIR/$name.ir"; exit 4
+    fi ;;
+  send)
+    name="${2:?usage: cz-ir send <name>}"; f="$DIR/$name.ir"
+    [ -s "$f" ] || { echo "no recording: $name"; exit 1; }
+    TX=$(ir_dev send) || { echo "no IR transmitter"; exit 1; }
+    sudo ir-ctl -d "$TX" -c 38000 -s "$f" && echo "sent $name via $TX" ;;
+  list)
+    ls -1 "$DIR"/*.ir 2>/dev/null | sed 's|.*/||; s|\.ir$||' || echo none ;;
+  *)
+    echo "usage: cz-ir rec <name> [secs] | send <name> | list"; exit 1 ;;
+esac

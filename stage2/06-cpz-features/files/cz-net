@@ -1,0 +1,15 @@
+#!/bin/bash
+wlan=$(iw dev 2>/dev/null | awk '/Interface/{print $2; exit}')
+echo "== battery =="
+for ps in /sys/class/power_supply/*; do
+    [ -r "$ps/capacity" ] || continue
+    echo "$(basename "$ps"): $(cat "$ps/capacity")% $(cat "$ps/status" 2>/dev/null)"
+    for f in voltage_now current_now temp; do
+        [ -r "$ps/$f" ] && echo "  $f: $(cat "$ps/$f")"
+    done
+done
+echo "== wifi =="
+[ -n "$wlan" ] && iw dev "$wlan" link
+echo "== ip =="
+ip -4 -o addr show scope global | awk '{print $2, $4}'
+ip route | head -3

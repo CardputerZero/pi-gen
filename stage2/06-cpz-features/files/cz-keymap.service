@@ -1,0 +1,12 @@
+[Unit]
+Description=Load CardputerZero Sym-layer console keymap
+After=console-setup.service systemd-vconsole-setup.service
+ConditionPathExists=/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cz-keymap
+
+[Install]
+WantedBy=multi-user.target

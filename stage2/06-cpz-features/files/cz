@@ -1,0 +1,4 @@
+#!/bin/sh
+# Menu runs on the bare console so framebuffer apps can own the screen.
+# tmux is launched from the menu's "0 CLI" entry instead.
+exec /usr/local/bin/cz-menu-theme

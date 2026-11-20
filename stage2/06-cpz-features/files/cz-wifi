@@ -1,0 +1,133 @@
+#!/bin/bash
+# cz-wifi — compact WiFi control for a 53-column console
+IFACE=$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')
+
+need() { [ -n "$IFACE" ] || { echo "no wifi device found"; exit 1; }; }
+
+# nmcli -t escapes ':' as '\:' and '\' as '\\'. Split a terse line into
+# the NM_F array, decoding escapes in a single left-to-right pass.
+NM_F=()
+nm_fields() {
+    NM_F=()
+    local line="$1" out='' ch esc='' i
+    for (( i = 0; i < ${#line}; i++ )); do
+        ch="${line:i:1}"
+        if [ -n "$esc" ]; then
+            out+="$ch"; esc=''
+        elif [ "$ch" = '\' ]; then
+            esc=1
+        elif [ "$ch" = : ]; then
+            NM_F+=("$out"); out=''
+        else
+            out+="$ch"
+        fi
+    done
+    NM_F+=("$out")
+}
+
+join() {
+    local ssid="$1" pw="$2" sec="$3" hid="${4:-no}" km
+    if echo "$sec" | grep -qi '802.1X\|EAP'; then
+        echo "enterprise network - configure manually with nmcli"
+        return 1
+    fi
+    if [ -z "$pw" ]; then
+        nmcli connection delete "$ssid" >/dev/null 2>&1
+        nmcli connection add type wifi con-name "$ssid" ifname "$IFACE" \
+            ssid "$ssid" wifi.hidden "$hid" >/dev/null || return 1
+        nmcli connection up "$ssid"
+        return
+    fi
+    local cands="wpa-psk"
+    echo "$sec" | grep -qi 'SAE\|WPA3' && cands="sae wpa-psk"
+    for km in $cands; do
+        nmcli connection delete "$ssid" >/dev/null 2>&1
+        nmcli connection add type wifi con-name "$ssid" ifname "$IFACE" \
+            ssid "$ssid" wifi.hidden "$hid" \
+            wifi-sec.key-mgmt "$km" wifi-sec.psk "$pw" >/dev/null || continue
+        nmcli connection up "$ssid" && return 0
+    done
+    echo "could not join $ssid"
+    return 1
+}
+
+radio() {
+    if [ "$(nmcli radio wifi 2>/dev/null)" = enabled ]; then
+        nmcli radio wifi off && echo "WiFi OFF"
+    else
+        nmcli radio wifi on  && echo "WiFi ON"
+    fi
+}
+
+scan() {
+    need
+    echo "scanning..."
+    nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1
+    sleep 3
+    local -a ssids=() sigs=() secs=()
+    local -A seen=()
+    local line ssid sig sec
+    while IFS= read -r line && [ "${#ssids[@]}" -lt 9 ]; do
+        [ -n "$line" ] || continue
+        nm_fields "$line"
+        [ "${#NM_F[@]}" -eq 3 ] || continue
+        ssid="${NM_F[0]}"; sig="${NM_F[1]}"; sec="${NM_F[2]}"
+        [ -n "$ssid" ] || continue
+        [ -n "${seen[$ssid]:-}" ] && continue
+        seen[$ssid]=1
+        ssids+=("$ssid"); sigs+=("$sig"); secs+=("$sec")
+    done < <(nmcli -t -f SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" 2>/dev/null)
+
+    if [ "${#ssids[@]}" -eq 0 ]; then echo "no networks found"; return 1; fi
+    local i
+    for i in "${!ssids[@]}"; do
+        printf '%2d %-24.24s %3s%% %s\n' \
+               "$((i+1))" "${ssids[i]}" "${sigs[i]}" "${secs[i]}"
+    done
+    printf 'number (0=cancel): '
+    read -r n
+    [[ "$n" =~ ^[1-9]$ ]] && [ "$n" -le "${#ssids[@]}" ] || { echo cancelled; return 0; }
+    local s="${ssids[$((n-1))]}" sec="${secs[$((n-1))]}"
+    if [ -n "$sec" ] && [ "$sec" != "--" ]; then
+        printf 'password: '; read -r pw
+        join "$s" "$pw" "$sec" no
+    else
+        join "$s" "" "$sec" no
+    fi
+}
+
+hidden() {
+    need
+    printf 'SSID: '; read -r ssid
+    [ -n "$ssid" ] || { echo cancelled; return 0; }
+    printf 'password (blank=open): '; read -r pw
+    join "$ssid" "$pw" "WPA2 WPA3" yes
+}
+
+signal() {
+    need
+    local cur
+    cur=$(nmcli -t -f ACTIVE,SSID,SIGNAL,RATE,CHAN device wifi list ifname "$IFACE" 2>/dev/null | grep '^yes:' | head -1)
+    if [ -z "$cur" ]; then
+        echo "not connected"
+        nmcli -t -f DEVICE,STATE,CONNECTION device 2>/dev/null | grep '^'"$IFACE"':'
+        return 0
+    fi
+    nm_fields "$cur"
+    local ssid="${NM_F[1]}" sig="${NM_F[2]}" rate="${NM_F[3]}" chan="${NM_F[4]}"
+    printf 'SSID   %s\nSignal %s%%\nRate   %s\nChan   %s\nBars   ' "$ssid" "$sig" "$rate" "$chan"
+    local bars=$(( (sig + 19) / 20 )) i
+    for i in 1 2 3 4 5; do
+        if [ "$i" -le "$bars" ]; then printf '#'; else printf '.'; fi
+    done
+    echo
+    ip -brief addr show "$IFACE" 2>/dev/null
+}
+
+case "${1:-}" in
+    radio)  radio ;;
+    scan)   scan ;;
+    hidden) hidden ;;
+    signal) signal ;;
+    *) echo "usage: cz-wifi radio|scan|hidden|signal"; exit 1 ;;
+esac
