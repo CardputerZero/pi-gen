@@ -14,17 +14,23 @@ blstep() { local cur max step new
     [ "$new" -lt 0 ] && new=0; [ "$new" -gt "$max" ] && new=$max
     echo "$new" > "$BL/brightness" 2>/dev/null; }
 
-vctl() { amixer -c "$CARD" scontrols 2>/dev/null \
-         | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" | head -1; }
+vctl() { local names
+    names=$(amixer -c "$CARD" scontrols 2>/dev/null \
+            | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p")
+    printf '%s\n' "$names" | grep -m1 -E '^DAC[LR]$' || printf '%s\n' "$names" | head -1; }
 VC=$(vctl)
 vol() { if [ -n "$VC" ]; then
             amixer -c "$CARD" sget "$VC" 2>/dev/null | grep -o '[0-9]*%' | head -1
         else printf '?'; fi; }
-volstep() { [ -n "$VC" ] && amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1; }
+volstep() { [ -n "$VC" ] && { amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1
+                              amixer -c "$CARD" sset DACR "$1" unmute >/dev/null 2>&1; }; }
 
 bat() { for p in /sys/class/power_supply/*; do
           [ -r "$p/capacity" ] && { printf '%s%%' "$(cat "$p/capacity")"; return; }
         done; printf '?'; }
+temp() { if have vcgencmd; then
+             vcgencmd measure_temp 2>/dev/null | sed -e "s/^temp=//" -e "s/'C\$/°C/"
+         else awk '{printf "%.1f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null; fi; }
 
 ir_dev() {
     for d in /dev/lirc*; do
@@ -36,13 +42,14 @@ ir_dev() {
 }
 
 hdr() { clear; printf '== %s ==\n' "$1"
-        local mode="${2:-main}" mid
+        local mode="${2:-main}" mid third
         case "$mode" in
           audio)  mid="Vol: $(vol)" ;;
           system) mid="BL: $(bl)/$(blm)" ;;
           *)      mid="Date: $(date +%Y-%m-%d)" ;;
         esac
-        printf 'Battery: %s  %s  Time: %s\n' "$(bat)" "$mid" "$(date +%H:%M)"; }
+        if [ "$mode" = system ]; then third="Temp: $(temp)"; else third="Time: $(date +%H:%M)"; fi
+        printf 'Battery: %s  %s  %s\n' "$(bat)" "$mid" "$third"; }
 
 menu() {
     local title="$1" mode="${2:-main}"; shift 2
@@ -83,7 +90,7 @@ m_audio() {
     menu AUDIO audio \
       "Volume +5%"    'volstep 5%+' \
       "Volume -5%"    'volstep 5%-' \
-      "Mute toggle"   'amixer -c "$CARD" sset "$VC" toggle' \
+      "Mute toggle"   'amixer -c "$CARD" sset Speaker toggle' \
       "Speaker test"  'speaker-test -D default -c 2 -t sine -l 1' \
       "All controls"  'amixer -c "$CARD" scontrols' \
       "Save levels"   'sudo alsactl store; echo saved'
@@ -109,8 +116,12 @@ m_ir() {
 
 m_system() {
     menu SYSTEM system \
-      "Overview"      'sysinfo' \
       "Audio"         '!m_audio' \
+      "Display"       '!m_display'
+}
+
+m_display() {
+    menu DISPLAY system \
       "Backlight +"   '!blstep +' \
       "Backlight -"   '!blstep -'
 }

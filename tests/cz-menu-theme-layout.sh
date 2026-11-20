@@ -18,6 +18,7 @@ bat() { printf '%s' '85%'; }
 bl()  { printf '%s' '60'; }
 blm() { printf '%s' '100'; }
 vol() { printf '%s' '40%'; }
+temp() { printf '%s' '45.0°C'; }
 
 render_main() {
     hdr "CARDPUTER ZERO" main
@@ -35,7 +36,12 @@ render_sub() {
 }
 render_system() {
     hdr "SYSTEM" system
-    row1 1 "Overview"; row1 2 "Audio"; row1 3 "Backlight +"; row1 4 "Backlight -"
+    row1 1 "Audio"; row1 2 "Display"
+    row1 0 "Back"; bbot
+}
+render_display() {
+    hdr "DISPLAY" system
+    row1 1 "Backlight +"; row1 2 "Backlight -"
     row1 0 "Back"; bbot
 }
 strip() { sed 's/\x1b\[[0-9;]*m//g'; }
@@ -51,17 +57,19 @@ check() {
     [ "$bad" = 0 ] && [ "$rows" -le 13 ]
 }
 render_ask() { printf 'n' | ask "Reboot the device?"; }
-main_s="$(render_main | strip)"; sub_s="$(render_sub | strip)"; sys_s="$(render_system | strip)"
+main_s="$(render_main | strip)"; sub_s="$(render_sub | strip)"; sys_s="$(render_system | strip)"; disp_s="$(render_display | strip)"
 check "MAIN" "$main_s"; a=$?
 check "AUDIO submenu" "$sub_s"; b=$?
 check "SYSTEM submenu" "$sys_s"; s=$?
+check "DISPLAY submenu" "$disp_s"; d=$?
 check "CONFIRM(ask)" "$(render_ask | strip)"; c=$?
 # Status bar fields per context.
 st=0
 case "$main_s" in *"Battery:"*"Date:"*"Time:"*) ;; *) st=1 ;; esac
 case "$sub_s" in *"Vol:"*) ;; *) st=1 ;; esac
-case "$sys_s" in *"BL:"*) ;; *) st=1 ;; esac
-echo "status fields (main=Battery/Date/Time, audio=Vol, system=BL): $([ $st = 0 ] && echo OK || echo FAIL)"
+case "$sys_s" in *"BL:"*"Temp:"*) ;; *) st=1 ;; esac
+case "$disp_s" in *"BL:"*) ;; *) st=1 ;; esac
+echo "status fields (main=Battery/Date/Time, audio=Vol, system=BL/Temp, display=BL): $([ $st = 0 ] && echo OK || echo FAIL)"
 # ask must confirm only on y/Y; anything else (incl. Enter) is No.
 printf 'y'  | ask "Q?" >/dev/null; r1=$?
 printf 'Y'  | ask "Q?" >/dev/null; r2=$?
@@ -70,4 +78,4 @@ printf '\n' | ask "Q?" >/dev/null; r4=$?
 beh=0; [ "$r1" = 0 ] && [ "$r2" = 0 ] && [ "$r3" = 1 ] && [ "$r4" = 1 ] || beh=1
 echo "ask accepts y/Y only (y=$r1 Y=$r2 n=$r3 enter=$r4): $([ $beh = 0 ] && echo OK || echo FAIL)"
 echo
-if [ "$a" = 0 ] && [ "$b" = 0 ] && [ "$s" = 0 ] && [ "$c" = 0 ] && [ "$beh" = 0 ] && [ "$st" = 0 ]; then echo "LAYOUT OK"; else echo "LAYOUT PROBLEM"; exit 1; fi
+if [ "$a" = 0 ] && [ "$b" = 0 ] && [ "$s" = 0 ] && [ "$d" = 0 ] && [ "$c" = 0 ] && [ "$beh" = 0 ] && [ "$st" = 0 ]; then echo "LAYOUT OK"; else echo "LAYOUT PROBLEM"; exit 1; fi

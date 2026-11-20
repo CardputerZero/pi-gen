@@ -47,13 +47,16 @@ blstep() { local cur max step new
     [ "$new" -lt 0 ] && new=0; [ "$new" -gt "$max" ] && new=$max
     echo "$new" > "$BL/brightness" 2>/dev/null; }
 
-vctl() { amixer -c "$CARD" scontrols 2>/dev/null \
-         | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" | head -1; }
+vctl() { local names
+    names=$(amixer -c "$CARD" scontrols 2>/dev/null \
+            | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p")
+    printf '%s\n' "$names" | grep -m1 -E '^DAC[LR]$' || printf '%s\n' "$names" | head -1; }
 VC=$(vctl)
 vol() { if [ -n "$VC" ]; then
             amixer -c "$CARD" sget "$VC" 2>/dev/null | grep -o '[0-9]*%' | head -1
         else printf '?'; fi; }
-volstep() { [ -n "$VC" ] && amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1; }
+volstep() { [ -n "$VC" ] && { amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1
+                              amixer -c "$CARD" sset DACR "$1" unmute >/dev/null 2>&1; }; }
 
 bat() { for p in /sys/class/power_supply/*; do
           [ -r "$p/capacity" ] && { printf '%s%%' "$(cat "$p/capacity")"; return; }
@@ -65,6 +68,9 @@ batcol() { local n; n=$(bat); n=${n%%%}
          elif [ "$n" -le 50 ]; then printf '%s' "$WARN"
          else printf '%s' "$OK"; fi ;;
     esac; }
+temp() { if have vcgencmd; then
+             vcgencmd measure_temp 2>/dev/null | sed -e "s/^temp=//" -e "s/'C\$/°C/"
+         else awk '{printf "%.1f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null; fi; }
 
 ir_dev() {
     for d in /dev/lirc*; do
@@ -77,20 +83,25 @@ ir_dev() {
 
 # Boxed header: top border, centered title, context status line, separator.
 # hdr <title> [mode]  mode: main=Battery/Date/Time, audio=Battery/Vol/Time,
-# system=Battery/BL/Time.
+# system=Battery/BL/Temp.
 hdr() {
     clear
     btop
     title_row "$1"
-    local mode="${2:-main}" bv tv dv midp midc
+    local mode="${2:-main}" bv tv dv midp midc tp tc
     bv=$(bat); tv=$(date +%H:%M); dv=$(date +%Y-%m-%d)
     case "$mode" in
       audio)  midp="Vol: $(vol)";      midc="${DIM}Vol:${R} ${LBL}$(vol)${R}" ;;
       system) midp="BL: $(bl)/$(blm)"; midc="${DIM}BL:${R} ${LBL}$(bl)/$(blm)${R}" ;;
       *)      midp="Date: $dv";        midc="${DIM}Date:${R} ${LBL}${dv}${R}" ;;
     esac
-    brow "  Battery: $bv  $midp  Time: $tv" \
-         "  ${DIM}Battery:${R} $(batcol)$bv$R  $midc  ${DIM}Time:${R} ${ACCENT}$tv$R"
+    if [ "$mode" = system ]; then
+      tp="Temp: $(temp)"; tc="${DIM}Temp:${R} ${LBL}$(temp)${R}"
+    else
+      tp="Time: $tv";     tc="${DIM}Time:${R} ${ACCENT}$tv${R}"
+    fi
+    brow "  Battery: $bv  $midp  $tp" \
+         "  ${DIM}Battery:${R} $(batcol)$bv$R  $midc  $tc"
     bsep
 }
 
@@ -149,7 +160,7 @@ m_audio() {
     menu AUDIO audio \
       "Volume +5%"    'volstep 5%+' \
       "Volume -5%"    'volstep 5%-' \
-      "Mute toggle"   'amixer -c "$CARD" sset "$VC" toggle' \
+      "Mute toggle"   'amixer -c "$CARD" sset Speaker toggle' \
       "Speaker test"  'speaker-test -D default -c 2 -t sine -l 1' \
       "All controls"  'amixer -c "$CARD" scontrols' \
       "Save levels"   'sudo alsactl store; echo saved'
@@ -175,8 +186,12 @@ m_ir() {
 
 m_system() {
     menu SYSTEM system \
-      "Overview"      'sysinfo' \
       "Audio"         '!m_audio' \
+      "Display"       '!m_display'
+}
+
+m_display() {
+    menu DISPLAY system \
       "Backlight +"   '!blstep +' \
       "Backlight -"   '!blstep -'
 }
