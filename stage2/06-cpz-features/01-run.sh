@@ -33,6 +33,7 @@ HN=$(cat "${ROOTFS_DIR}/etc/hostname")
 sed -i '/^127\.0\.1\.1[[:space:]]/d' "${ROOTFS_DIR}/etc/hosts"
 printf '127.0.1.1\t%s\n' "$HN" >> "${ROOTFS_DIR}/etc/hosts"
 install -D -m 0755 files/cz-camera "${ROOTFS_DIR}/usr/local/bin/cz-camera"
+install -D -m 0755 files/cz-optocam "${ROOTFS_DIR}/usr/local/bin/cz-optocam"
 install -D -m 0644 files/Camera_1.0.4_m5stack1_arm64.deb "${ROOTFS_DIR}/tmp/camera.deb"
 on_chroot << 'CHROOT'
 apt-get install -y /tmp/camera.deb

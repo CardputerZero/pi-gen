@@ -3,6 +3,8 @@ ir-keytable
 iw
 ncurses-term
 newsboat
+python3-evdev
+python3-picamera2
 rpicam-apps-core
 rpicam-apps-encoder
 tmux

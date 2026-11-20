@@ -146,7 +146,7 @@ while :; do
     echo ' 0 CLI         9 Logout'
     read -r -n1 -s k
     case "$k" in
-      1) need camera_app && cz-camera ;;
+      1) need cz-optocam && cz-optocam ;;
       2) need cmus && cmus ;;
       3) m_audio ;;
       4) m_net ;;
