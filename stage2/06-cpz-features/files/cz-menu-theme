@@ -1,0 +1,239 @@
+#!/bin/bash
+# cz-menu-theme — PROTOTYPE themed control panel for CardputerZero (53x14 console).
+# Same behavior/keys as cz-menu; restyled with a double-line box + 16-color ANSI.
+# Experimental: does not replace cz-menu. Tune the palette in the THEME block below.
+BL=/sys/class/backlight/backlight
+CARD=ES8389Audio
+export JACK_NO_START_SERVER=1
+
+# ---------------- THEME (fbcon-safe 16-color ANSI) ----------------
+R=$'\e[0m'            # reset
+BORDER=$'\e[34m'      # box border ......... blue
+TITLE=$'\e[1;36m'     # screen title ....... bold cyan
+NUM=$'\e[1;33m'       # option numbers ..... bold yellow
+LBL=$'\e[1;37m'       # option labels ...... bold white
+DIM=$'\e[90m'         # captions / hints ... gray
+ACCENT=$'\e[36m'      # clock / accents .... cyan
+OK=$'\e[32m'          # battery good ....... green
+WARN=$'\e[33m'        # battery mid ........ yellow
+BAD=$'\e[31m'         # battery low ........ red
+# ------------------------------------------------------------------
+
+# Box geometry: outer width 53, inner width 51.
+_sp=$(printf '%51s' ''); HL=${_sp// /═}
+sp()   { printf '%*s' "$1" ''; }
+btop() { printf '%s╔%s╗%s\n' "$BORDER" "$HL" "$R"; }
+bsep() { printf '%s╠%s╣%s\n' "$BORDER" "$HL" "$R"; }
+bbot() { printf '%s╚%s╝%s\n' "$BORDER" "$HL" "$R"; }
+# brow <plain-for-width> <colored-content>
+brow() {
+    local pad=$(( 51 - ${#1} )); (( pad < 0 )) && pad=0
+    printf '%s║%s%s%*s%s║%s\n' "$BORDER" "$2" "$R" "$pad" '' "$BORDER" "$R"
+}
+title_row() {
+    local t="$1" len l r
+    len=${#t}
+    l=$(( (51 - len) / 2 ))
+    r=$(( 51 - len - l ))
+    brow "$(sp "$l")$t$(sp "$r")" "$(sp "$l")$TITLE$t$R$(sp "$r")"
+}
+
+have()  { command -v "$1" >/dev/null 2>&1; }
+pause() { printf '\npress any key'; read -r -n1 -s _; }
+bl()    { cat "$BL/brightness" 2>/dev/null || echo 0; }
+blm()   { cat "$BL/max_brightness" 2>/dev/null || echo 100; }
+
+vctl() { amixer -c "$CARD" scontrols 2>/dev/null \
+         | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" | head -1; }
+VC=$(vctl)
+vol() { if [ -n "$VC" ]; then
+            amixer -c "$CARD" sget "$VC" 2>/dev/null | grep -o '[0-9]*%' | head -1
+        else printf '?'; fi; }
+volstep() { [ -n "$VC" ] && amixer -c "$CARD" sset "$VC" "$1" unmute >/dev/null 2>&1; }
+
+bat() { for p in /sys/class/power_supply/*; do
+          [ -r "$p/capacity" ] && { printf '%s%%' "$(cat "$p/capacity")"; return; }
+        done; printf '?'; }
+batcol() { local n; n=$(bat); n=${n%%%}
+    case "$n" in
+      ''|*[!0-9]*) printf '%s' "$DIM" ;;
+      *) if [ "$n" -le 20 ]; then printf '%s' "$BAD"
+         elif [ "$n" -le 50 ]; then printf '%s' "$WARN"
+         else printf '%s' "$OK"; fi ;;
+    esac; }
+
+ir_dev() {
+    for d in /dev/lirc*; do
+        [ -e "$d" ] || continue
+        ir-ctl -d "$d" --features 2>/dev/null \
+          | grep -q "Device can $1 raw IR" && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+# Boxed header: top border, centered title, status line, separator.
+hdr() {
+    clear
+    btop
+    title_row "$1"
+    local bv blv blmv vv tv
+    bv=$(bat); blv=$(bl); blmv=$(blm); vv=$(vol); tv=$(date +%H:%M)
+    brow "  BAT $bv  BL $blv/$blmv  VOL $vv  $tv" \
+         "  ${DIM}BAT${R} $(batcol)$bv$R  ${DIM}BL${R} ${LBL}$blv/$blmv$R  ${DIM}VOL${R} ${LBL}$vv$R  ${ACCENT}$tv$R"
+    bsep
+}
+
+# One-column item row (submenus): "  N Label"
+row1() {
+    local plain colored
+    plain=$(printf '  %s %s' "$1" "$2")
+    colored=$(printf '  %s%s%s %s%s%s' "$NUM" "$1" "$R" "$LBL" "$2" "$R")
+    brow "$plain" "$colored"
+}
+# Two-column item row (main screen): "  N Label   N Label"
+row2() {
+    local plain colored
+    plain=$(printf '  %s %-18s %s %s' "$1" "$2" "$3" "$4")
+    colored=$(printf '  %s%s%s %s%-18s%s %s%s%s %s%s%s' \
+        "$NUM" "$1" "$R" "$LBL" "$2" "$R" "$NUM" "$3" "$R" "$LBL" "$4" "$R")
+    brow "$plain" "$colored"
+}
+
+menu() {
+    local title="$1"; shift
+    local -a labels=() cmds=()
+    while [ $# -gt 0 ]; do
+        labels+=("$1"); cmds+=("$2"); shift 2
+    done
+    while :; do
+        hdr "$title"
+        local i
+        for i in "${!labels[@]}"; do
+            row1 "$((i+1))" "${labels[i]}"
+        done
+        row1 0 "Back"
+        bbot
+        read -r -n1 -s k
+        [ "$k" = 0 ] && return
+        if [[ "$k" =~ ^[1-9]$ ]] && [ "$k" -le "${#cmds[@]}" ]; then
+            local cmd="${cmds[$((k-1))]}"
+            clear
+            if [ "${cmd#!}" != "$cmd" ]; then
+                eval "${cmd#!}"
+            else
+                eval "$cmd"; pause
+            fi
+        fi
+    done
+}
+
+sysinfo() {
+    uname -srmo; echo; uptime; echo; free -h; echo
+    df -h / /boot/firmware 2>/dev/null; echo
+    have vcgencmd && vcgencmd measure_temp
+    echo; systemctl is-active lcd-console cz-keymap 2>/dev/null
+}
+
+m_audio() {
+    menu AUDIO \
+      "Volume +5%"    'volstep 5%+' \
+      "Volume -5%"    'volstep 5%-' \
+      "Mute toggle"   'amixer -c "$CARD" sset "$VC" toggle' \
+      "Speaker test"  'speaker-test -D default -c 2 -t sine -l 1' \
+      "All controls"  'amixer -c "$CARD" scontrols' \
+      "Save levels"   'sudo alsactl store; echo saved'
+}
+
+m_net() {
+    menu WIFI \
+      "Radio on/off"    'cz-wifi radio' \
+      "Scan and join"   'cz-wifi scan' \
+      "Hidden network"  'cz-wifi hidden' \
+      "Network"         'ip -brief addr; ip route'
+}
+
+m_ir() {
+    menu IR \
+      "Devices"        'ir-keytable 2>/dev/null | head -20' \
+      "Receive 5s"     'd=$(ir_dev receive) && sudo timeout 5 ir-ctl -r -d "$d"' \
+      "Record button"  'printf "name: "; read -r n; cz-ir rec "$n" 5' \
+      "Replay button"  'cz-ir list; printf "name: "; read -r n; cz-ir send "$n"' \
+      "Saved buttons"  'cz-ir list' \
+      "All protocols"  'sudo ir-keytable -p all'
+}
+
+m_system() {
+    menu SYSTEM \
+      "Overview"      'sysinfo' \
+      "Kernel log"    'sudo dmesg | tail -25' \
+      "Failed units"  'systemctl --failed --no-pager' \
+      "cz services"   'systemctl status lcd-console cz-keymap --no-pager | head -25' \
+      "I2C scan"      'sudo i2cdetect -y 1' \
+      "Input devices" 'grep -E "^N:|^H:" /proc/bus/input/devices'
+}
+
+m_power() {
+    menu POWER \
+      "Battery detail" 'for p in /sys/class/power_supply/*; do echo "== $p"; for f in capacity status voltage_now current_now temp health; do [ -r "$p/$f" ] && printf "  %-14s %s\n" "$f" "$(cat "$p/$f")"; done; done' \
+      "CPU / thermal"  'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null; vcgencmd measure_temp 2>/dev/null; vcgencmd get_throttled 2>/dev/null' \
+      "Uptime / load"  'uptime; cat /proc/loadavg' \
+      "Reboot"         '!ask "Reboot the device?" && sudo reboot'
+}
+
+# Themed yes/no confirmation. ask <question> -> 0 only on y/Y (default No).
+ask() {
+    local q="$1" c len l r
+    clear
+    btop
+    title_row "CONFIRM"
+    brow "" ""
+    len=${#q}; l=$(( (51 - len) / 2 )); r=$(( 51 - len - l ))
+    brow "$(sp "$l")$q$(sp "$r")" "$(sp "$l")$LBL$q$R$(sp "$r")"
+    brow "" ""
+    len=9; l=$(( (51 - len) / 2 )); r=$(( 51 - len - l ))
+    brow "$(sp "$l")[ Y / N ]$(sp "$r")" \
+         "$(sp "$l")${DIM}[ ${OK}Y${DIM} / ${BAD}N${DIM} ]${R}$(sp "$r")"
+    brow "" ""
+    bbot
+    read -r -n1 -s c
+    case "$c" in y|Y) return 0 ;; *) return 1 ;; esac
+}
+
+do_logout() {
+    ask "Logout of CardputerZero?" || return
+    clear
+    [ -n "${XDG_SESSION_ID:-}" ] && loginctl terminate-session "$XDG_SESSION_ID" 2>/dev/null
+    exit 0
+}
+
+need() {
+    command -v "$1" >/dev/null 2>&1 && return 0
+    printf '%s not installed.\npress any key' "$1"
+    read -r -n1 -s _
+    return 1
+}
+
+while :; do
+    hdr "CARDPUTER ZERO"
+    row2 1 "Camera" 5 "IR"
+    row2 2 "Music"  6 "System"
+    row2 3 "Audio"  7 "Power"
+    row2 4 "WiFi"   8 "News"
+    row2 0 "CLI"    9 "Logout"
+    bsep
+    brow "  press a number to select" "${DIM}  press a number to select${R}"
+    bbot
+    read -r -n1 -s k
+    case "$k" in
+      1) need camera_app && cz-camera ;;
+      2) need cmus && cmus ;;
+      3) m_audio ;;
+      4) m_net ;;
+      5) m_ir ;;
+      6) m_system ;;
+      7) m_power ;;
+      8) need newsboat && cz-news ;;
+      9) do_logout ;;
+      0) clear; tmux -f /etc/cz-tmux.conf new-session -A -s main ;;
+    esac
+done

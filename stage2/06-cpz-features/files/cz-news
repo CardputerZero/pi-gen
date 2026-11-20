@@ -1,0 +1,12 @@
+#!/bin/bash
+# cz-news — newsboat, seeding a starter config on first run
+if ! command -v newsboat >/dev/null 2>&1; then
+    printf 'newsboat not installed.\nRun: sudo apt install newsboat\npress any key'
+    read -r -n1 -s _
+    exit 1
+fi
+D="$HOME/.newsboat"
+mkdir -p "$D"
+[ -s "$D/urls" ]   || install -m 0644 /usr/share/cz/newsboat-urls   "$D/urls"
+[ -s "$D/config" ] || install -m 0644 /usr/share/cz/newsboat-config "$D/config"
+exec newsboat "$@"

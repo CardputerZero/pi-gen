@@ -1,0 +1,10 @@
+#!/bin/bash
+DEF=/usr/share/consolefonts/Lat15-Terminus12x6.psf.gz
+if [ -z "${1:-}" ]; then
+    f=$DEF
+else
+    f=$(ls /usr/share/consolefonts/*"$1"* 2>/dev/null | head -1)
+fi
+[ -n "$f" ] && [ -r "$f" ] || { echo "font not found" >&2; exit 1; }
+for t in 1 2 3 4 5 6; do setfont -C "/dev/tty$t" "$f" 2>/dev/null || true; done
+basename "$f"

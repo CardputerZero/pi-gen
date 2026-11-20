@@ -1,0 +1,66 @@
+#!/bin/bash
+# CardputerZero status: battery, link, throughput, clock. ASCII only.
+MAXW=${1:-53}
+
+hr() {
+    local v=$1
+    if   [ "$v" -ge 1048576 ]; then printf '%dM' $((v / 1048576))
+    elif [ "$v" -ge 1024 ];    then printf '%dK' $((v / 1024))
+    else                            printf '%dB' "$v"
+    fi
+}
+
+# ---- battery (BQ27220) ----
+bat="?%"
+for ps in /sys/class/power_supply/*; do
+    [ -r "$ps/capacity" ] || continue
+    cap=$(cat "$ps/capacity" 2>/dev/null) || continue
+    case "$(cat "$ps/status" 2>/dev/null)" in
+        Charging) mark="+" ;;
+        Full)     mark="=" ;;
+        *)        mark="" ;;
+    esac
+    bat="${cap}%${mark}"
+    break
+done
+
+# ---- active interface (follows the default route: wlan0 or eth0) ----
+wlan=$(iw dev 2>/dev/null | awk '/Interface/{print $2; exit}')
+iface=$(ip route show default 2>/dev/null | awk '{print $5; exit}')
+[ -n "$iface" ] || iface=$wlan
+
+# ---- link ----
+net="offline"
+if [ -n "$iface" ] && [ "$iface" = "$wlan" ]; then
+    link=$(iw dev "$iface" link 2>/dev/null)
+    ssid=$(printf '%s\n' "$link" | sed -n 's/^[[:space:]]*SSID: //p' | head -1)
+    sig=$(printf '%s\n' "$link" | sed -n 's/^[[:space:]]*signal: //p' | awk '{print $1}' | head -1)
+    net="${ssid:0:14} ${sig:-?}"
+elif [ -n "$iface" ]; then
+    net="eth"
+fi
+
+# ---- throughput: delta since previous invocation ----
+rate=""
+if [ -n "$iface" ] && [ -r "/sys/class/net/$iface/statistics/rx_bytes" ]; then
+    rx=$(cat "/sys/class/net/$iface/statistics/rx_bytes")
+    tx=$(cat "/sys/class/net/$iface/statistics/tx_bytes")
+    now=$(date +%s)
+    state="/dev/shm/cz-net.${UID:-0}"
+    pt=$now; pr=$rx; ptx=$tx
+    if [ -r "$state" ]; then
+        set -- $(cat "$state" 2>/dev/null)
+        if [ $# -eq 3 ]; then pt=$1; pr=$2; ptx=$3; fi
+    fi
+    printf '%s %s %s\n' "$now" "$rx" "$tx" > "$state" 2>/dev/null
+    dt=$((now - pt)); [ "$dt" -gt 0 ] || dt=1
+    drx=$(((rx - pr) / dt));  [ "$drx" -ge 0 ] || drx=0
+    dtx=$(((tx - ptx) / dt)); [ "$dtx" -ge 0 ] || dtx=0
+    rate="R$(hr "$drx") T$(hr "$dtx")"
+fi
+
+line=$(printf '%s' "$bat $net $rate $(date +%H:%M)" | tr -s ' ')
+if [ "${#line}" -gt "$MAXW" ]; then
+    line=$(printf '%s' "$bat $rate $(date +%H:%M)" | tr -s ' ')
+fi
+printf '%s' "${line:0:$MAXW}"

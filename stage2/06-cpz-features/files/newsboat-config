@@ -1,0 +1,5 @@
+text-width 50
+datetime-format "%d %b"
+reload-time 30
+max-items 50
+cleanup-on-quit yes

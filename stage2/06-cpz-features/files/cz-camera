@@ -1,0 +1,29 @@
+#!/bin/bash
+# cz-camera — run M5 CameraApp on the LCD, then hand the console back cleanly.
+APP=/usr/bin/camera_app
+KB=/dev/input/by-path/platform-3f804000.i2c-event
+[ -x "$APP" ] || { echo "camera_app not installed"; exit 1; }
+if [ -n "${TMUX:-}" ]; then
+    echo "Leave tmux first: cz-menu -> 0, then 'exit'. Then run: cz-camera"
+    exit 1
+fi
+
+export LV_LINUX_FBDEV_DEVICE=/dev/fb0
+[ -e "$KB" ] && export LV_LINUX_KEYBOARD_DEVICE="$KB"
+VT="/dev/tty$(fgconsole 2>/dev/null || echo 1)"
+
+vtmode() {
+    python3 - "$VT" "$1" <<'PY'
+import sys, os, fcntl, termios
+dev, mode = sys.argv[1], sys.argv[2]
+fd = os.open(dev, os.O_RDWR)
+if mode == 'text':
+    termios.tcflush(fd, termios.TCIFLUSH)   # drop keys the console buffered
+fcntl.ioctl(fd, 0x4B3A, 0x01 if mode == 'graphics' else 0x00)
+os.close(fd)
+PY
+}
+
+trap 'vtmode text; printf "\033c"; clear' EXIT INT TERM
+vtmode graphics
+"$APP"
