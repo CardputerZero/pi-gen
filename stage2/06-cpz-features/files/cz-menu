@@ -8,6 +8,11 @@ have()  { command -v "$1" >/dev/null 2>&1; }
 pause() { printf '\npress any key'; read -r -n1 -s _; }
 bl()    { cat "$BL/brightness" 2>/dev/null || echo 0; }
 blm()   { cat "$BL/max_brightness" 2>/dev/null || echo 100; }
+blstep() { local cur max step new
+    cur=$(bl); max=$(blm); step=$(( max / 10 )); [ "$step" -lt 1 ] && step=1
+    if [ "$1" = "+" ]; then new=$(( cur + step )); else new=$(( cur - step )); fi
+    [ "$new" -lt 0 ] && new=0; [ "$new" -gt "$max" ] && new=$max
+    echo "$new" > "$BL/brightness" 2>/dev/null; }
 
 vctl() { amixer -c "$CARD" scontrols 2>/dev/null \
          | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" | head -1; }
@@ -31,17 +36,22 @@ ir_dev() {
 }
 
 hdr() { clear; printf '== %s ==\n' "$1"
-        printf 'BAT %s  BL %s/%s  VOL %s  %s\n' \
-               "$(bat)" "$(bl)" "$(blm)" "$(vol)" "$(date +%H:%M)"; }
+        local mode="${2:-main}" mid
+        case "$mode" in
+          audio)  mid="Vol: $(vol)" ;;
+          system) mid="BL: $(bl)/$(blm)" ;;
+          *)      mid="Date: $(date +%Y-%m-%d)" ;;
+        esac
+        printf 'Battery: %s  %s  Time: %s\n' "$(bat)" "$mid" "$(date +%H:%M)"; }
 
 menu() {
-    local title="$1"; shift
+    local title="$1" mode="${2:-main}"; shift 2
     local -a labels=() cmds=()
     while [ $# -gt 0 ]; do
         labels+=("$1"); cmds+=("$2"); shift 2
     done
     while :; do
-        hdr "$title"
+        hdr "$title" "$mode"
         local i
         for i in "${!labels[@]}"; do
             printf ' %d %s\n' "$((i+1))" "${labels[i]}"
@@ -70,7 +80,7 @@ sysinfo() {
 
 
 m_audio() {
-    menu AUDIO \
+    menu AUDIO audio \
       "Volume +5%"    'volstep 5%+' \
       "Volume -5%"    'volstep 5%-' \
       "Mute toggle"   'amixer -c "$CARD" sset "$VC" toggle' \
@@ -80,7 +90,7 @@ m_audio() {
 }
 
 m_net() {
-    menu WIFI \
+    menu WIFI main \
       "Radio on/off"    'cz-wifi radio' \
       "Scan and join"   'cz-wifi scan' \
       "Hidden network"  'cz-wifi hidden' \
@@ -88,7 +98,7 @@ m_net() {
 }
 
 m_ir() {
-    menu IR \
+    menu IR main \
       "Devices"        'ir-keytable 2>/dev/null | head -20' \
       "Receive 5s"     'd=$(ir_dev receive) && sudo timeout 5 ir-ctl -r -d "$d"' \
       "Record button"  'printf "name: "; read -r n; cz-ir rec "$n" 5' \
@@ -98,17 +108,15 @@ m_ir() {
 }
 
 m_system() {
-    menu SYSTEM \
+    menu SYSTEM system \
       "Overview"      'sysinfo' \
-      "Kernel log"    'sudo dmesg | tail -25' \
-      "Failed units"  'systemctl --failed --no-pager' \
-      "cz services"   'systemctl status lcd-console cz-keymap --no-pager | head -25' \
-      "I2C scan"      'sudo i2cdetect -y 1' \
-      "Input devices" 'grep -E "^N:|^H:" /proc/bus/input/devices'
+      "Audio"         '!m_audio' \
+      "Backlight +"   '!blstep +' \
+      "Backlight -"   '!blstep -'
 }
 
 m_power() {
-    menu POWER \
+    menu POWER main \
       "Battery detail" 'for p in /sys/class/power_supply/*; do echo "== $p"; for f in capacity status voltage_now current_now temp health; do [ -r "$p/$f" ] && printf "  %-14s %s\n" "$f" "$(cat "$p/$f")"; done; done' \
       "CPU / thermal"  'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null; vcgencmd measure_temp 2>/dev/null; vcgencmd get_throttled 2>/dev/null' \
       "Uptime / load"  'uptime; cat /proc/loadavg' \
@@ -138,23 +146,22 @@ need() {
 }
 
 while :; do
-    hdr "CARDPUTER ZERO"
+    hdr "CARDPUTER ZERO" main
     echo ' 1 Camera      5 IR'
     echo ' 2 Music       6 System'
-    echo ' 3 Audio       7 Power'
-    echo ' 4 WiFi        8 News'
-    echo ' 0 CLI         9 Logout'
+    echo ' 3 News        7 Power'
+    echo ' 4 WiFi        8 Logout'
+    echo ' 0 CLI'
     read -r -n1 -s k
     case "$k" in
       1) need camera_app && cz-camera ;;
       2) need cmus && cmus ;;
-      3) m_audio ;;
+      3) need newsboat && cz-news ;;
       4) m_net ;;
       5) m_ir ;;
       6) m_system ;;
       7) m_power ;;
-      8) need newsboat && cz-news ;;
-      9) do_logout ;;
+      8) do_logout ;;
       0) clear; tmux -f /etc/cz-tmux.conf new-session -A -s main ;;
     esac
 done

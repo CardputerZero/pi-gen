@@ -1,7 +1,6 @@
 #!/bin/bash
-# cz-menu-theme — PROTOTYPE themed control panel for CardputerZero (53x14 console).
-# Same behavior/keys as cz-menu; restyled with a double-line box + 16-color ANSI.
-# Experimental: does not replace cz-menu. Tune the palette in the THEME block below.
+# cz-menu-theme — themed control panel for CardputerZero (53x14 console); the default menu.
+# Double-line box + 16-color ANSI. Tune the palette in the THEME block below.
 BL=/sys/class/backlight/backlight
 CARD=ES8389Audio
 export JACK_NO_START_SERVER=1
@@ -42,6 +41,11 @@ have()  { command -v "$1" >/dev/null 2>&1; }
 pause() { printf '\npress any key'; read -r -n1 -s _; }
 bl()    { cat "$BL/brightness" 2>/dev/null || echo 0; }
 blm()   { cat "$BL/max_brightness" 2>/dev/null || echo 100; }
+blstep() { local cur max step new
+    cur=$(bl); max=$(blm); step=$(( max / 10 )); [ "$step" -lt 1 ] && step=1
+    if [ "$1" = "+" ]; then new=$(( cur + step )); else new=$(( cur - step )); fi
+    [ "$new" -lt 0 ] && new=0; [ "$new" -gt "$max" ] && new=$max
+    echo "$new" > "$BL/brightness" 2>/dev/null; }
 
 vctl() { amixer -c "$CARD" scontrols 2>/dev/null \
          | sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" | head -1; }
@@ -71,15 +75,22 @@ ir_dev() {
     return 1
 }
 
-# Boxed header: top border, centered title, status line, separator.
+# Boxed header: top border, centered title, context status line, separator.
+# hdr <title> [mode]  mode: main=Battery/Date/Time, audio=Battery/Vol/Time,
+# system=Battery/BL/Time.
 hdr() {
     clear
     btop
     title_row "$1"
-    local bv blv blmv vv tv
-    bv=$(bat); blv=$(bl); blmv=$(blm); vv=$(vol); tv=$(date +%H:%M)
-    brow "  BAT $bv  BL $blv/$blmv  VOL $vv  $tv" \
-         "  ${DIM}BAT${R} $(batcol)$bv$R  ${DIM}BL${R} ${LBL}$blv/$blmv$R  ${DIM}VOL${R} ${LBL}$vv$R  ${ACCENT}$tv$R"
+    local mode="${2:-main}" bv tv dv midp midc
+    bv=$(bat); tv=$(date +%H:%M); dv=$(date +%Y-%m-%d)
+    case "$mode" in
+      audio)  midp="Vol: $(vol)";      midc="${DIM}Vol:${R} ${LBL}$(vol)${R}" ;;
+      system) midp="BL: $(bl)/$(blm)"; midc="${DIM}BL:${R} ${LBL}$(bl)/$(blm)${R}" ;;
+      *)      midp="Date: $dv";        midc="${DIM}Date:${R} ${LBL}${dv}${R}" ;;
+    esac
+    brow "  Battery: $bv  $midp  Time: $tv" \
+         "  ${DIM}Battery:${R} $(batcol)$bv$R  $midc  ${DIM}Time:${R} ${ACCENT}$tv$R"
     bsep
 }
 
@@ -100,13 +111,13 @@ row2() {
 }
 
 menu() {
-    local title="$1"; shift
+    local title="$1" mode="${2:-main}"; shift 2
     local -a labels=() cmds=()
     while [ $# -gt 0 ]; do
         labels+=("$1"); cmds+=("$2"); shift 2
     done
     while :; do
-        hdr "$title"
+        hdr "$title" "$mode"
         local i
         for i in "${!labels[@]}"; do
             row1 "$((i+1))" "${labels[i]}"
@@ -135,7 +146,7 @@ sysinfo() {
 }
 
 m_audio() {
-    menu AUDIO \
+    menu AUDIO audio \
       "Volume +5%"    'volstep 5%+' \
       "Volume -5%"    'volstep 5%-' \
       "Mute toggle"   'amixer -c "$CARD" sset "$VC" toggle' \
@@ -145,7 +156,7 @@ m_audio() {
 }
 
 m_net() {
-    menu WIFI \
+    menu WIFI main \
       "Radio on/off"    'cz-wifi radio' \
       "Scan and join"   'cz-wifi scan' \
       "Hidden network"  'cz-wifi hidden' \
@@ -153,7 +164,7 @@ m_net() {
 }
 
 m_ir() {
-    menu IR \
+    menu IR main \
       "Devices"        'ir-keytable 2>/dev/null | head -20' \
       "Receive 5s"     'd=$(ir_dev receive) && sudo timeout 5 ir-ctl -r -d "$d"' \
       "Record button"  'printf "name: "; read -r n; cz-ir rec "$n" 5' \
@@ -163,17 +174,15 @@ m_ir() {
 }
 
 m_system() {
-    menu SYSTEM \
+    menu SYSTEM system \
       "Overview"      'sysinfo' \
-      "Kernel log"    'sudo dmesg | tail -25' \
-      "Failed units"  'systemctl --failed --no-pager' \
-      "cz services"   'systemctl status lcd-console cz-keymap --no-pager | head -25' \
-      "I2C scan"      'sudo i2cdetect -y 1' \
-      "Input devices" 'grep -E "^N:|^H:" /proc/bus/input/devices'
+      "Audio"         '!m_audio' \
+      "Backlight +"   '!blstep +' \
+      "Backlight -"   '!blstep -'
 }
 
 m_power() {
-    menu POWER \
+    menu POWER main \
       "Battery detail" 'for p in /sys/class/power_supply/*; do echo "== $p"; for f in capacity status voltage_now current_now temp health; do [ -r "$p/$f" ] && printf "  %-14s %s\n" "$f" "$(cat "$p/$f")"; done; done' \
       "CPU / thermal"  'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null; vcgencmd measure_temp 2>/dev/null; vcgencmd get_throttled 2>/dev/null' \
       "Uptime / load"  'uptime; cat /proc/loadavg' \
@@ -214,12 +223,12 @@ need() {
 }
 
 while :; do
-    hdr "CARDPUTER ZERO"
+    hdr "CARDPUTER ZERO" main
     row2 1 "Camera" 5 "IR"
     row2 2 "Music"  6 "System"
-    row2 3 "Audio"  7 "Power"
-    row2 4 "WiFi"   8 "News"
-    row2 0 "CLI"    9 "Logout"
+    row2 3 "News"   7 "Power"
+    row2 4 "WiFi"   8 "Logout"
+    row1 0 "CLI"
     bsep
     brow "  press a number to select" "${DIM}  press a number to select${R}"
     bbot
@@ -227,13 +236,12 @@ while :; do
     case "$k" in
       1) need camera_app && cz-camera ;;
       2) need cmus && cmus ;;
-      3) m_audio ;;
+      3) need newsboat && cz-news ;;
       4) m_net ;;
       5) m_ir ;;
       6) m_system ;;
       7) m_power ;;
-      8) need newsboat && cz-news ;;
-      9) do_logout ;;
+      8) do_logout ;;
       0) clear; tmux -f /etc/cz-tmux.conf new-session -A -s main ;;
     esac
 done
