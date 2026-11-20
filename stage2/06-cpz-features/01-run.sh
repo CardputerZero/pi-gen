@@ -43,3 +43,10 @@ install -D -m 0755 files/cz-news          "${ROOTFS_DIR}/usr/local/bin/cz-news"
 install -D -m 0644 files/newsboat-urls    "${ROOTFS_DIR}/usr/share/cz/newsboat-urls"
 install -D -m 0644 files/newsboat-config  "${ROOTFS_DIR}/usr/share/cz/newsboat-config"
 install -D -m 0755 files/cz-wifi "${ROOTFS_DIR}/usr/local/bin/cz-wifi"
+install -D -m 0755 files/cz-splash "${ROOTFS_DIR}/usr/local/bin/cz-splash"
+install -D -m 0644 files/cz-splash.rgb565 "${ROOTFS_DIR}/usr/share/cz/cz-splash.rgb565"
+install -D -m 0644 files/cz-ping.wav "${ROOTFS_DIR}/usr/share/cz/cz-ping.wav"
+install -D -m 0644 files/cz-splash.service "${ROOTFS_DIR}/etc/systemd/system/cz-splash.service"
+on_chroot << 'CHROOT'
+systemctl enable cz-splash.service
+CHROOT
