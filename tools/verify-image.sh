@@ -21,6 +21,12 @@ case "$(basename "$IMG")" in
   *-lite*) IS_LITE=1 ;;
 esac
 
+# Set to 1 to require that first boot cannot be reached over sshd with the
+# factory password still live (see CardputerZero/launcher#277). Default 0
+# reports the state without failing, because the shipped image is currently
+# expected to have password auth on and the baked credential present.
+REQUIRE_FIRSTBOOT_SSH_GATE="${REQUIRE_FIRSTBOOT_SSH_GATE:-0}"
+
 echo "=========================================="
 echo " CardputerZero Image Verification"
 echo "=========================================="
@@ -37,7 +43,7 @@ ROOT_END=$(fdisk -l "$IMG" 2>/dev/null | grep "Linux" | awk '{print $3}')
 BOOT_SECTORS=$((BOOT_END - BOOT_START + 1))
 ROOT_SECTORS=$((ROOT_END - ROOT_START + 1))
 
-echo "[1/7] Image size and partition layout"
+echo "[1/8] Image size and partition layout"
 case "$(basename "$IMG")" in
   *-lite*)
     if [ "$IMG_SIZE_BYTES" -le "$MAX_IMG_SIZE" ]; then
@@ -78,7 +84,7 @@ mkdir -p "$TMPDIR/boot"
 mount -o loop,ro "$TMPDIR/boot.fat" "$TMPDIR/boot" 2>/dev/null
 
 echo ""
-echo "[2/7] Boot partition (FAT32)"
+echo "[2/8] Boot partition (FAT32)"
 
 for firmware_file in start.elf splash.bmp; do
     if [ -s "$TMPDIR/boot/$firmware_file" ]; then
@@ -228,7 +234,7 @@ fi
 umount "$TMPDIR/boot" 2>/dev/null || true
 
 echo ""
-echo "[3/7] No first-boot resize chain"
+echo "[3/8] No first-boot resize chain"
 
 ROOTFS_MOUNT="$TMPDIR/rootfs"
 mkdir -p "$ROOTFS_MOUNT"
@@ -343,7 +349,7 @@ else
 fi
 
 echo ""
-echo "[4/7] Kernel modules (/lib/modules/*/extra/)"
+echo "[4/8] Kernel modules (/lib/modules/*/extra/)"
 
 REQUIRED_MODULES=(
     "bq27xxx_battery.ko"  
@@ -376,7 +382,7 @@ else
 fi
 
 echo ""
-echo "[5/7] APPLaunch"
+echo "[5/8] APPLaunch"
 
 if debugfs -R "stat usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "Size:"; then
     pass "APPLaunch binary installed"
@@ -409,7 +415,7 @@ else
 fi
 
 echo ""
-echo "[6/7] Modprobe configuration"
+echo "[6/8] Modprobe configuration"
 
 if debugfs -R "cat etc/modules-load.d/cardputerzero.conf" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "i2c-dev"; then
     pass "modules-load.d: i2c-dev"
@@ -430,7 +436,7 @@ else
 fi
 
 echo ""
-echo "[7/7] Packages"
+echo "[7/8] Packages"
 
 set +e
 debugfs -R "cat var/lib/dpkg/status" "$TMPDIR/root.ext4" > "$TMPDIR/dpkg_status" 2>/dev/null
@@ -456,6 +462,116 @@ else
     fail "cmatrix NOT installed"
 fi
 set -e
+
+echo ""
+echo "[8/8] First-boot credentials"
+
+# Never print a password hash: a CI log is not a secret store. Everything below
+# inspects the shape of the field only.
+
+# Field 2 of an /etc/shadow line for $1. Empty when the user has no entry.
+shadow_field() {
+    debugfs -R "cat etc/shadow" "$TMPDIR/root.ext4" 2>/dev/null \
+        | awk -F: -v u="$1" '$1 == u { print $2 }' | head -1
+}
+
+ROOT_SHADOW=$(shadow_field root || true)
+case "$ROOT_SHADOW" in
+  '*'|'!'|'!!'|'!'*)
+    pass "root password is locked" ;;
+  '')
+    fail "root has no /etc/shadow entry" ;;
+  '$'*)
+    fail "root has a usable password hash (expected the lock from usermod --pass='*')" ;;
+  *)
+    pass "root password is locked (field: non-hash)" ;;
+esac
+
+# pi-gen bakes FIRST_USER_PASS into the image, and LaunchWizard's OOBE is what
+# makes the user replace it (it crypt-verifies the baked default at boot). The
+# invariant worth enforcing is therefore not "no password" -- it is "a baked
+# password is never shipped without an armed OOBE". A build that keeps
+# FIRST_USER_PASS but drops the marker or the unit would hand every device a
+# live known credential with nothing prompting for a change.
+FIRST_USER="${FIRST_USER_NAME:-pi}"
+USER_SHADOW=$(shadow_field "$FIRST_USER" || true)
+
+OOBE_MARKER=0
+if debugfs -R "stat var/lib/LaunchWizard/run-oobe" "$TMPDIR/root.ext4" 2>/dev/null \
+    | grep -q "Size:"; then
+    OOBE_MARKER=1
+fi
+
+WIZARD_ENABLED=0
+if debugfs -R "ls etc/systemd/system/multi-user.target.wants" "$TMPDIR/root.ext4" 2>/dev/null \
+    | grep -q "LaunchWizard"; then
+    WIZARD_ENABLED=1
+fi
+
+WIZARD_BINARY=0
+if debugfs -R "stat usr/share/APPLaunch/bin/LaunchWizard" "$TMPDIR/root.ext4" 2>/dev/null \
+    | grep -q "Size:"; then
+    WIZARD_BINARY=1
+fi
+
+case "$USER_SHADOW" in
+  '$'*)
+    pass "$FIRST_USER has a password baked in (FIRST_USER_PASS was set)"
+    if [ "$OOBE_MARKER" = 1 ]; then
+        pass "OOBE armed: /var/lib/LaunchWizard/run-oobe present"
+    else
+        fail "$FIRST_USER has a baked password but /var/lib/LaunchWizard/run-oobe is MISSING"
+    fi
+    if [ "$WIZARD_ENABLED" = 1 ]; then
+        pass "LaunchWizard.service enabled in multi-user.target.wants"
+    else
+        fail "$FIRST_USER has a baked password but LaunchWizard.service is NOT enabled"
+    fi
+    if [ "$WIZARD_BINARY" = 1 ]; then
+        pass "LaunchWizard binary installed"
+    else
+        fail "$FIRST_USER has a baked password but the LaunchWizard binary is MISSING"
+    fi ;;
+  '')
+    fail "$FIRST_USER has no /etc/shadow entry" ;;
+  *)
+    # --disabled-login leaves "!" or "*": nothing to replace, so the OOBE is
+    # not load-bearing for credentials on this build.
+    pass "$FIRST_USER has no usable password (login disabled)" ;;
+esac
+
+# sshd reachability during the window the OOBE is meant to close.
+SSH_ENABLED=0
+if debugfs -R "ls etc/systemd/system/multi-user.target.wants" "$TMPDIR/root.ext4" 2>/dev/null \
+    | grep -qE "(^|[[:space:]])ssh\.service"; then
+    SSH_ENABLED=1
+fi
+
+SSHD_PW_AUTH="default(yes)"
+if debugfs -R "cat etc/ssh/sshd_config" "$TMPDIR/root.ext4" 2>/dev/null \
+    | grep -qE "^[[:space:]]*PasswordAuthentication[[:space:]]+no"; then
+    SSHD_PW_AUTH="no"
+fi
+if debugfs -R "ls etc/ssh/sshd_config.d" "$TMPDIR/root.ext4" 2>/dev/null | grep -q "\.conf"; then
+    if debugfs -R "cat etc/ssh/sshd_config.d" "$TMPDIR/root.ext4" 2>/dev/null \
+        | grep -qE "^[[:space:]]*PasswordAuthentication[[:space:]]+no"; then
+        SSHD_PW_AUTH="no (drop-in)"
+    fi
+fi
+
+pass "sshd enabled=$SSH_ENABLED, PasswordAuthentication=$SSHD_PW_AUTH"
+
+if [ "$SSH_ENABLED" = 1 ] && [ "$SSHD_PW_AUTH" != "no" ] && \
+   [ "$SSHD_PW_AUTH" != "no (drop-in)" ]; then
+    case "$USER_SHADOW" in
+      '$'*)
+        if [ "$REQUIRE_FIRSTBOOT_SSH_GATE" = 1 ]; then
+            fail "sshd accepts passwords while $FIRST_USER still has the baked credential (launcher#277)"
+        else
+            pass "sshd password login reachable on first boot with a baked credential (launcher#277; set REQUIRE_FIRSTBOOT_SSH_GATE=1 to fail)"
+        fi ;;
+    esac
+fi
 
 echo ""
 echo "=========================================="
