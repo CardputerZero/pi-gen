@@ -330,7 +330,22 @@ autologin-user=rpi-first-boot-wizard
 autologin-session=rpd-labwc
 EOF
 # Append custom cmdline parameters for CardputerZero.
-sed -i 's/$/ quiet fbcon=map:off cfg80211.ieee80211_regdom=AE/' \
+#
+# The regulatory domain was hard-coded to AE, which shipped the United Arab
+# Emirates channel set and TX-power limits on every image regardless of where
+# the unit was sold. Take it from WPA_COUNTRY (pi-gen already exports that
+# variable) or from an explicit override, falling back to AE so this build is
+# unchanged until a default is chosen deliberately.
+CARDPUTERZERO_WIFI_REGDOM="${CARDPUTERZERO_WIFI_REGDOM:-${WPA_COUNTRY:-AE}}"
+# The value is substituted into the kernel command line, so reject anything
+# that is not an ISO 3166-1 alpha-2 code or the "00" world domain rather than
+# letting a stray character corrupt cmdline.txt.
+if ! printf '%s' "$CARDPUTERZERO_WIFI_REGDOM" | grep -qE '^([A-Z]{2}|00)$'; then
+    echo "ERROR: CARDPUTERZERO_WIFI_REGDOM must be an uppercase ISO 3166-1" >&2
+    echo "ERROR: alpha-2 code or 00, got '${CARDPUTERZERO_WIFI_REGDOM}'" >&2
+    exit 1
+fi
+sed -i "s/\$/ quiet fbcon=map:off cfg80211.ieee80211_regdom=${CARDPUTERZERO_WIFI_REGDOM}/" \
     "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 
 # Clean up CardputerZero cmdline tokens.
